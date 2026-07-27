@@ -38,6 +38,13 @@ function classify(status) {
   return new SyncError('network', `GitHub responded ${status}`);
 }
 
+function validEntry(e) {
+  return !!e && typeof e === 'object'
+    && typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date)
+    && typeof e.updatedAt === 'string'
+    && (e.deleted === true || Number.isFinite(e.weightKg));
+}
+
 export async function pullData({ repo, token, fetchFn = fetch }) {
   const res = await fetchFn(`${API}/repos/${repo}/contents/data.json`, { headers: headers(token) });
   if (res.status === 404) return { entries: [], sha: null };
@@ -51,6 +58,9 @@ export async function pullData({ repo, token, fetchFn = fetch }) {
   }
   if (!Array.isArray(data.entries)) {
     throw new SyncError('data', 'data.json has no entries array; check the repo, git history has every prior version');
+  }
+  if (!data.entries.every(validEntry)) {
+    throw new SyncError('data', 'data.json has a malformed entry; check the repo, git history has every prior version');
   }
   return { entries: data.entries, sha: body.sha };
 }

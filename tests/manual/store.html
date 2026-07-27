@@ -3,7 +3,8 @@
 <title>store.js test</title>
 <pre id="out">running</pre>
 <script type="module">
-import { openDB, getAllEntries, putEntry, replaceAllEntries } from '../../app/js/store.js';
+import { openDB, getAllEntries, putEntry, replaceAllEntries, mergeReplaceEntries } from '../../app/js/store.js';
+import { mergeEntries } from '../../app/js/logic.js';
 const out = document.getElementById('out');
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 try {
@@ -23,6 +24,24 @@ try {
   ]);
   all = await getAllEntries(db);
   assert(all.length === 2, 'replaceAll must swap the dataset');
+
+  await new Promise((res) => {
+    const d = indexedDB.deleteDatabase('wt-test-2');
+    d.onsuccess = d.onerror = d.onblocked = res;
+  });
+  const db2 = await openDB('wt-test-2');
+  await putEntry(db2, { date: '2026-07-26', weightKg: 90.0, note: '', updatedAt: '2026-07-26T10:00:00Z' });
+  await mergeReplaceEntries(db2, [
+    { date: '2026-07-26', weightKg: 91.0, note: '', updatedAt: '2026-07-26T08:00:00Z' },
+    { date: '2026-07-25', weightKg: 89.5, note: '', updatedAt: '2026-07-25T08:00:00Z' },
+  ], mergeEntries);
+  const merged = await getAllEntries(db2);
+  assert(merged.length === 2, 'mergeReplaceEntries must hold A and B, got ' + merged.length);
+  const a = merged.find((e) => e.date === '2026-07-26');
+  const b = merged.find((e) => e.date === '2026-07-25');
+  assert(a && a.weightKg === 90.0, 'A must keep newer local weightKg, got ' + (a && a.weightKg));
+  assert(b && b.weightKg === 89.5, 'B must be present with its weightKg, got ' + (b && b.weightKg));
+
   out.textContent = 'PASS';
 } catch (e) {
   out.textContent = 'FAIL: ' + e.message;

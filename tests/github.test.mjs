@@ -75,3 +75,23 @@ test('pullData maps schema-corrupt data.json to SyncError kind data', async () =
     (e) => e instanceof SyncError && e.kind === 'data'
   );
 });
+
+test('pullData rejects malformed entries with SyncError kind data', async () => {
+  for (const bad of [
+    { date: '2026-7-1', weightKg: 80, updatedAt: '2026-07-01T08:00:00Z' },
+    { date: '2026-07-01', updatedAt: '2026-07-01T08:00:00Z' },
+  ]) {
+    const body = { sha: 'abc', content: encodeContent({ entries: [bad] }) };
+    await assert.rejects(
+      pullData({ repo: 'a/b', token: 't', fetchFn: async () => fakeRes(200, body) }),
+      (e) => e instanceof SyncError && e.kind === 'data'
+    );
+  }
+});
+
+test('pullData accepts tombstone entries without weightKg', async () => {
+  const tomb = { date: '2026-07-01', deleted: true, updatedAt: '2026-07-01T08:00:00Z' };
+  const body = { sha: 'abc', content: encodeContent({ entries: [tomb] }) };
+  const r = await pullData({ repo: 'a/b', token: 't', fetchFn: async () => fakeRes(200, body) });
+  assert.deepEqual(r.entries, [tomb]);
+});

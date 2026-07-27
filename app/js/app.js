@@ -1,6 +1,6 @@
-import { todayLocal, parseWeightToKg, kgToLbs, computeStats } from './logic.js';
+import { todayLocal, parseWeightToKg, kgToLbs, computeStats, mergeEntries } from './logic.js';
 import { renderChartSVG } from './chart.js';
-import { openDB, getAllEntries, putEntry, replaceAllEntries } from './store.js';
+import { openDB, getAllEntries, putEntry, mergeReplaceEntries } from './store.js';
 import { pullData, pushData } from './github.js';
 import { runSync } from './sync.js';
 
@@ -29,7 +29,7 @@ function setStatus(state, msg = '') {
 }
 
 async function render() {
-  const entries = await getAllEntries(db);
+  const entries = (await getAllEntries(db)).filter((e) => !e.deleted);
   $('empty-hint').hidden = entries.length > 0;
   $('chart-wrap').innerHTML = entries.length
     ? renderChartSVG({ entries, goalKg: config.goalKg ?? null, unit: config.unit || 'kg', rangeDays })
@@ -48,14 +48,14 @@ async function render() {
 async function sync() {
   if (!config.token || !config.repo) { setStatus('off'); return; }
   if (!navigator.onLine) { setStatus('pending'); return; }
-  const ok = await runSync({
+  await runSync({
     getLocal: () => getAllEntries(db),
-    saveLocal: (entries) => replaceAllEntries(db, entries),
+    saveLocal: (entries) => mergeReplaceEntries(db, entries, mergeEntries),
     pull: () => pullData({ repo: config.repo, token: config.token }),
     push: (entries, sha) => pushData({ repo: config.repo, token: config.token, entries, sha }),
     onStatus: (state, msg) => setStatus(state, msg),
   });
-  if (ok) render();
+  render();
 }
 
 function showFormError(msg) {

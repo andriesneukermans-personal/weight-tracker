@@ -41,3 +41,25 @@ export function replaceAllEntries(db, entries) {
   for (const e of entries) os.put(e);
   return done(txn);
 }
+
+// Atomic merge-with-current-store write. Reads the store's current
+// contents, merges with incoming inside the same readwrite transaction as
+// the clear+rewrite, so a concurrent putEntry (e.g. a user logging an entry
+// mid-sync) is ordered either entirely before this transaction (and thus
+// survives via newest-updatedAt) or entirely after (and thus isn't
+// clobbered) rather than being wiped by a stale snapshot.
+export function mergeReplaceEntries(db, incoming, mergeFn) {
+  return new Promise((resolve, reject) => {
+    const txn = db.transaction('entries', 'readwrite');
+    const os = txn.objectStore('entries');
+    const req = os.getAll();
+    req.onsuccess = () => {
+      const { merged } = mergeFn(req.result, incoming);
+      os.clear();
+      for (const e of merged) os.put(e);
+    };
+    txn.oncomplete = () => resolve();
+    txn.onerror = () => reject(txn.error);
+    txn.onabort = () => reject(txn.error);
+  });
+}
