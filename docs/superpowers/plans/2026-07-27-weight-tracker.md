@@ -570,7 +570,10 @@ export async function pullData({ repo, token, fetchFn = fetch }) {
   } catch {
     throw new SyncError('data', 'data.json is not valid JSON; check the repo, git history has every prior version');
   }
-  return { entries: Array.isArray(data.entries) ? data.entries : [], sha: body.sha };
+  if (!Array.isArray(data.entries)) {
+    throw new SyncError('data', 'data.json has no entries array; check the repo, git history has every prior version');
+  }
+  return { entries: data.entries, sha: body.sha };
 }
 
 export async function pushData({ repo, token, entries, sha, fetchFn = fetch }) {
