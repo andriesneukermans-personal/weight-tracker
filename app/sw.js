@@ -33,18 +33,16 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== 'GET') return;
+  const refresh = fetch(e.request).then((res) => {
+    if (!res.ok) return res;
+    const copy = res.clone();
+    return caches.open(CACHE).then((c) => c.put(e.request, copy)).then(() => res);
+  });
+  // Keep the worker alive until the background revalidation and cache
+  // write finish; without this the browser may terminate the SW right
+  // after responding from cache, dropping the revalidate half of SWR.
+  e.waitUntil(refresh.catch(() => {}));
   e.respondWith(
-    caches.match(e.request).then((hit) => {
-      const refresh = fetch(e.request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-          }
-          return res;
-        })
-        .catch(() => hit);
-      return hit || refresh;
-    })
+    caches.match(e.request).then((hit) => hit || refresh.catch(() => hit))
   );
 });
