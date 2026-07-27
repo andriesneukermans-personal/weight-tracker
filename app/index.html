@@ -4,60 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Weight</title>
-<meta name="theme-color" content="#0b1220">
+<meta name="theme-color" content="#fffaf0">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<header>
-  <h1>Weight</h1>
-  <span id="sync-status" data-state="off">sync off</span>
-  <button id="settings-btn" aria-label="Settings">&#9881;</button>
-</header>
-<main>
-  <p id="sync-msg" role="status" hidden></p>
-  <form id="entry-form" autocomplete="off">
-    <input id="weight" inputmode="decimal" placeholder="82.4" aria-label="Weight" required>
-    <span id="unit-label">kg</span>
-    <input id="date" type="date" aria-label="Date">
-    <input id="note" placeholder="note (optional)" maxlength="120" aria-label="Note">
-    <button type="submit">Log</button>
-    <p id="form-error" role="alert" hidden></p>
-  </form>
-  <p id="empty-hint" hidden>Log your first weight above; your trend will appear here.</p>
-  <div id="chart-wrap"></div>
-  <div id="range-row">
-    <button type="button" data-range="30">30d</button>
-    <button type="button" data-range="90" class="active">90d</button>
-    <button type="button" data-range="0">all</button>
-  </div>
-  <div id="stats">
-    <div><span id="stat-trend">&middot;</span><label>trend</label></div>
-    <div><span id="stat-change">&middot;</span><label>30 days</label></div>
-    <div><span id="stat-goal">&middot;</span><label>to goal</label></div>
-  </div>
-</main>
+<div id="app">
+  <main id="scroll"></main>
+  <nav id="tabbar"></nav>
+  <div id="overlay"></div>
+</div>
 <dialog id="settings">
   <form method="dialog" id="settings-form">
-    <h2>Settings</h2>
-    <label>Goal weight (kg)
-      <input id="cfg-goal" inputmode="decimal" placeholder="78">
-    </label>
-    <label>Unit
-      <select id="cfg-unit">
-        <option value="kg">kg</option>
-        <option value="lbs">lbs</option>
-      </select>
-    </label>
+    <h2>Sync settings</h2>
     <label>Data repo (owner/name)
       <input id="cfg-repo" placeholder="you/weight-tracker-data">
     </label>
     <label>GitHub token (fine-grained, Contents read/write on the data repo only)
       <input id="cfg-token" type="password">
     </label>
+    <p id="cfg-msg" role="status"></p>
     <div class="row">
       <button type="button" id="export-btn">Export JSON</button>
       <button id="save-settings" value="save">Save</button>

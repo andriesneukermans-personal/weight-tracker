@@ -89,3 +89,12 @@ Empty state (no entries yet) explains the app in one line and points at the form
 ## Out of scope
 
 Multi-user, accounts, native app, Apple Health integration, in-app entry deletion, reminders/notifications, any backend.
+
+## 2026-07-27 addendum: Clai redesign
+
+The UI was rebuilt to the "Clai" design (claude.ai/design project, cream surface `#fffaf0`, pink accent `#ff4d8b`, Inter, phone-sized shell with a bottom tab bar). Storage, sync, tombstones, PWA, and the pure-logic module layout are unchanged. What changed on top:
+
+- **Four screens**: Home (reminder banner, current weight, week trend delta, chart, streak and kg-down stat cards, forecast banner), Log (number pad, backdate picker, tag chips, note, kg/lbs toggle, milestone celebration overlay), History (weekly groups with averages, per-entry deltas, notes, tags), Goal (stepper card, progress bar, forecast, milestone list). Settings (repo, token, export) live behind the avatar; the sync indicator is a chip in the header.
+- **Entry schema gains optional fields**: `time` ("HH:MM", stamped when logging for today) and `tags` (string array). Entries without them keep working; the union merge compares them via `updatedAt` as before.
+- **Chart**: range pills (1W to All plus custom dates), drag-to-scrub readout (weight, date, time, note, tags), tag-filter chips that recompute the trend from the filtered subset, goal line when in range, per-point time labels when the visible span is 8 days or less.
+- **Derived logic** (pure, tested): `streakOf`, `forecast` (7-day-trend slope over the trailing ~8 weeks projected onto the goal), and `suggestTags` (local tag estimation: recency-weighted time-of-day kernel vote plus a weekday vote gated on a genuine weekday effect, with an early-morning cold-start default). Suggestions pre-select chips on the log screen and are dismissed by any manual tag change.

@@ -1,101 +1,608 @@
-import { todayLocal, parseWeightToKg, kgToLbs, computeStats, mergeEntries } from './logic.js';
-import { renderChartSVG } from './chart.js';
+// UI layer (Clai design): four screens behind a tab bar, rendered from an
+// in-memory copy of the IndexedDB entries. Weights are stored in kg; display
+// converts to the configured unit. Sync stays pull-merge-push via GitHub.
+
+import {
+  todayLocal, addDays, sortByDate, parseWeightToKg, kgToLbs, mergeEntries,
+  movingAverage, streakOf, forecast, suggestTags, NOTE_CHIPS,
+  shortDate, parseDateLocal, dayNum, hhmm,
+} from './logic.js';
+import { computeChart, chartSVG, RANGE_KEYS } from './chart.js';
 import { openDB, getAllEntries, putEntry, mergeReplaceEntries } from './store.js';
 import { pullData, pushData } from './github.js';
 import { runSync } from './sync.js';
 
 const CONFIG_KEY = 'wt.config';
-const $ = (id) => document.getElementById(id);
+const UI_KEY = 'wt.ui';
+const ACCENT = '#ff4d8b';
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let db;
 let config = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
-let rangeDays = 90;
+let alive = []; // sorted, non-deleted entries; refreshed after every mutation and sync
+let syncState = { state: 'off', msg: '' };
 
-function saveConfig() {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+const savedUi = JSON.parse(localStorage.getItem(UI_KEY) || '{}');
+const state = {
+  screen: 'home', scrub: null, draft: '', note: '', tags: [], suggested: [],
+  celeb: null, tagFilter: [],
+  range: savedUi.range || '3M',
+  cFrom: savedUi.cFrom || addDays(todayLocal(), -56),
+  cTo: savedUi.cTo || todayLocal(),
+  logDate: todayLocal(),
+};
+
+function saveConfig() { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); }
+function saveUi() { localStorage.setItem(UI_KEY, JSON.stringify({ range: state.range, cFrom: state.cFrom, cTo: state.cTo })); }
+
+function set(patch) {
+  Object.assign(state, patch);
+  saveUi();
+  render();
 }
 
-function fmtWeight(kg) {
-  return config.unit === 'lbs' ? `${kgToLbs(kg).toFixed(1)} lb` : `${kg.toFixed(1)} kg`;
+function unit() { return config.unit === 'lbs' ? 'lbs' : 'kg'; }
+function disp(kg) { return unit() === 'lbs' ? kgToLbs(kg) : kg; }
+function fmt(kg) { return disp(kg).toFixed(1); }
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
+}
+function allTags() {
+  const present = new Set();
+  alive.forEach((e) => (e.tags || []).forEach((t) => present.add(t)));
+  return NOTE_CHIPS.filter((t) => present.has(t)).concat([...present].filter((t) => !NOTE_CHIPS.includes(t)));
 }
 
-function setStatus(state, msg = '') {
-  const el = $('sync-status');
-  el.dataset.state = state;
-  el.textContent = { syncing: 'syncing', synced: 'synced', pending: 'pending', off: 'sync off' }[state];
-  const m = $('sync-msg');
-  m.textContent = msg;
-  m.hidden = !msg;
+/* Derive everything the screens need. Handles 0 and 1 entries gracefully. */
+function compute() {
+  const todayIso = todayLocal();
+  const todayN = dayNum(todayIso);
+  const goal = Number.isFinite(config.goalKg) ? config.goalKg : null;
+  const es = alive;
+  const last = es[es.length - 1] || null;
+  const first = es[0] || null;
+  const trend = es.length ? movingAverage(es) : [];
+  const trLast = trend.length ? trend[trend.length - 1].avgKg : null;
+
+  // week-over-week delta of the trend line
+  let weekDeltaText = '', weekDeltaColor = '#9a9a9a';
+  if (trend.length) {
+    const cutoff = addDays(last.date, -7);
+    const past = [...trend].reverse().find((t) => t.date <= cutoff);
+    const wd = disp(trLast - (past ? past.avgKg : trLast));
+    const rounded = Math.abs(wd).toFixed(1);
+    if (rounded === '0.0') {
+      weekDeltaText = '· flat this week';
+    } else {
+      weekDeltaText = (wd < 0 ? '▼ ' : '▲ ') + rounded + ' ' + unit() + ' this week';
+      weekDeltaColor = wd < 0 ? '#1a8a4a' : '#ef4444';
+    }
+  }
+
+  const f = es.length ? forecast(es, goal) : { kind: 'empty' };
+  const predictText = {
+    onTrack: f.date ? `On track to hit ${goal != null ? fmt(goal) : ''} ${unit()} by ${shortDate(f.date)}` : '',
+    slow: 'Trend is slow; forecast beyond a year',
+    atGoal: 'You are at your goal, maintain it!',
+    flat: 'Trend is flat; log a few more weigh-ins for a forecast',
+    noGoal: 'Set a goal to unlock a forecast',
+    empty: 'Log your first weigh-in to get started',
+  }[f.kind];
+
+  const streak = streakOf(es, todayIso);
+  const logged30 = es.filter((e) => dayNum(e.date) > todayN - 30).length;
+  const minW = es.length ? Math.min(...es.map((e) => e.weightKg)) : null;
+  const startW = first ? first.weightKg : null;
+  const doneK = startW != null ? Math.max(0, Math.floor(startW - minW)) : 0;
+
+  // chart, optionally narrowed to the selected tag filters
+  const chartBase = state.tagFilter.length
+    ? es.filter((e) => (e.tags || []).some((t) => state.tagFilter.includes(t)))
+    : es;
+  const chart = computeChart({
+    entries: chartBase, goalKg: goal, unit: unit(),
+    rangeKey: state.range, cFrom: state.cFrom, cTo: state.cTo,
+  });
+  const chartEmptyMsg = es.length < 2
+    ? 'Log a couple of weigh-ins to see your trend'
+    : 'Not enough weigh-ins with these tags';
+
+  // log screen draft
+  const parsed = parseWeightToKg(state.draft, unit());
+  const valid = state.draft !== '' && parsed.ok;
+  let draftDelta = 'Enter the weight', draftDeltaColor = '#9a9a9a';
+  if (valid && last) {
+    const dd = disp(parsed.kg - last.weightKg);
+    draftDelta = (dd <= 0 ? '▼ ' : '▲ ') + Math.abs(dd).toFixed(1) + ' ' + unit() + ' vs last weigh-in';
+    draftDeltaColor = dd <= 0 ? '#1a8a4a' : '#ef4444';
+  } else if (valid) {
+    draftDelta = 'First weigh-in!';
+    draftDeltaColor = '#1a8a4a';
+  } else if (state.draft !== '' && !parsed.ok) {
+    draftDelta = parsed.error;
+    draftDeltaColor = '#ef4444';
+  }
+
+  // history grouped by week (0 = this week)
+  const byWeek = {};
+  [...es].reverse().forEach((e) => {
+    const wk = Math.floor((todayN - dayNum(e.date)) / 7);
+    (byWeek[wk] = byWeek[wk] || []).push(e);
+  });
+  const historyWeeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b).slice(0, 12).map((wk) => {
+    const rows = byWeek[wk];
+    const avg = rows.reduce((s, e) => s + e.weightKg, 0) / rows.length;
+    const label = wk === 0 ? 'THIS WEEK'
+      : wk === 1 ? 'LAST WEEK'
+      : (shortDate(rows[rows.length - 1].date) + ' – ' + shortDate(rows[0].date)).toUpperCase();
+    return {
+      label, avg: fmt(avg),
+      rows: rows.map((e) => {
+        const pi = es.indexOf(e) - 1;
+        const d = pi >= 0 ? disp(e.weightKg - es[pi].weightKg) : 0;
+        const date = parseDateLocal(e.date);
+        return {
+          day: DOW[date.getDay()], date: shortDate(e.date), w: fmt(e.weightKg),
+          delta: (d <= 0 ? '−' : '+') + Math.abs(d).toFixed(1),
+          dcol: d <= 0 ? '#1a8a4a' : '#ef4444',
+          note: e.note || '', tags: e.tags || [],
+        };
+      }),
+    };
+  });
+
+  // milestones
+  const milestones = startW == null ? [] : [2, 4, 6, 8].map((k) => {
+    const done = doneK >= k;
+    return {
+      label: (unit() === 'kg' ? k + ' kg' : Math.round(disp(k)) + ' lbs') + ' down',
+      sub: (done ? 'Reached at ' : 'At ') + fmt(startW - k) + ' ' + unit(),
+      op: done ? '1' : '0.55', badgeBg: done ? '#a4d4c5' : '#f0ead9',
+      mark: done ? '✓' : '·', markC: done ? '#0a1a1a' : '#9a9a9a',
+    };
+  });
+  if (goal != null) {
+    milestones.push({
+      label: 'Goal · ' + fmt(goal) + ' ' + unit(),
+      sub: f.kind === 'onTrack' && f.date ? 'Forecast: ' + shortDate(f.date) : 'Keep logging to unlock a forecast',
+      op: '1', badgeBg: minW != null && minW <= goal ? '#a4d4c5' : ACCENT,
+      mark: minW != null && minW <= goal ? '✓' : '★', markC: '#ffffff',
+    });
+  }
+
+  const pct = goal != null && startW != null && startW > goal
+    ? Math.max(0, Math.min(1, (startW - last.weightKg) / (startW - goal)))
+    : null;
+  const today = parseDateLocal(todayIso);
+
+  return {
+    chart, chartEmptyMsg,
+    todayLong: DOW_LONG[today.getDay()] + ', ' + shortDate(todayIso),
+    showReminder: !last || last.date !== todayIso,
+    reminderTitle: last ? "Today's weigh-in is waiting" : 'Log your first weigh-in',
+    reminderSub: streak > 0 ? `Keep the ${streak}-day streak alive` : 'Start your streak today',
+    currentW: last ? fmt(last.weightKg) : '––.–',
+    weekDeltaText, weekDeltaColor,
+    isCustom: state.range === 'C',
+    streak, loggedPct: Math.round(logged30 / 30 * 100) + '%',
+    bestMilestone: unit() === 'kg' ? doneK : Math.round(disp(doneK)),
+    sinceLabel: first ? 'since ' + shortDate(first.date) : 'no data yet',
+    predictText,
+    valid, parsedKg: valid ? parsed.kg : null,
+    draftShow: state.draft || '––.–', draftDelta, draftDeltaColor,
+    saveBg: valid ? ACCENT : '#d8d2c0',
+    entryCount: es.length, historyWeeks,
+    goalDisplay: goal != null ? fmt(goal) : '—',
+    startLabel: startW != null ? fmt(startW) : '—',
+    pctW: pct != null ? Math.round(pct * 100) + '%' : '0%',
+    pctLabel: pct != null ? Math.round(pct * 100) + '% there' : '—',
+    milestones,
+  };
 }
 
-async function render() {
-  const entries = (await getAllEntries(db)).filter((e) => !e.deleted);
-  $('empty-hint').hidden = entries.length > 0;
-  $('chart-wrap').innerHTML = entries.length
-    ? renderChartSVG({ entries, goalKg: config.goalKg ?? null, unit: config.unit || 'kg', rangeDays })
-    : '';
-  const stats = computeStats(entries, config.goalKg ?? null);
-  $('stat-trend').textContent = stats ? fmtWeight(stats.trendKg) : '·';
-  $('stat-change').textContent = stats && stats.change30dKg !== null
-    ? `${stats.change30dKg >= 0 ? '+' : '-'}${fmtWeight(Math.abs(stats.change30dKg))}`
-    : '·';
-  $('stat-goal').textContent = stats && stats.toGoalKg !== null
-    ? `${fmtWeight(Math.abs(stats.toGoalKg))}${stats.toGoalKg > 0 ? '' : ' past'}`
-    : '·';
-  $('unit-label').textContent = config.unit === 'lbs' ? 'lb' : 'kg';
+/* ---------- templates ---------- */
+
+function unitToggle() {
+  const on = (k) => unit() === k;
+  return `<div class="seg">
+    <button data-action="unit:kg" class="seg-btn" style="background:${on('kg') ? '#0a0a0a' : 'transparent'};color:${on('kg') ? '#ffffff' : '#6a6a6a'}">kg</button>
+    <button data-action="unit:lbs" class="seg-btn" style="background:${on('lbs') ? '#0a0a0a' : 'transparent'};color:${on('lbs') ? '#ffffff' : '#6a6a6a'}">lbs</button>
+  </div>`;
+}
+
+function chartCard(V) {
+  const pills = RANGE_KEYS.map(([label, key]) => {
+    const on = state.range === key;
+    return `<button data-action="range:${key}" class="pill" style="background:${on ? '#0a0a0a' : 'transparent'};color:${on ? '#ffffff' : '#6a6a6a'}">${label}</button>`;
+  }).join('');
+  const custom = V.isCustom ? `
+    <div class="custom-dates">
+      <input type="date" id="cfrom" value="${state.cFrom}">
+      <span>to</span>
+      <input type="date" id="cto" value="${state.cTo}">
+    </div>` : '';
+  const tags = allTags();
+  const tagPills = tags.length ? `<div class="pills">${tags.map((tg, i) => {
+    const on = state.tagFilter.includes(tg);
+    return `<button data-action="tfilter:${i}" class="pill pill-sm" style="background:${on ? '#0a0a0a' : '#f5f0e0'};color:${on ? '#ffffff' : '#3a3a3a'}">${esc(tg)}</button>`;
+  }).join('')}</div>` : '';
+  return `<div class="card chart-card">
+    <div class="pills">${pills}</div>
+    ${custom}
+    ${tagPills}
+    <div class="chart-meta">
+      <span id="readout" style="display:none"></span>
+      <div id="legend">
+        <span class="legend-item"><span class="legend-dot"></span>Daily</span>
+        <span class="legend-item"><span class="legend-trend" style="background:${ACCENT}"></span>7-day trend</span>
+        <span class="legend-item"><span class="legend-goal"></span>Goal</span>
+      </div>
+    </div>
+    ${V.chart.empty ? `<div class="chart-empty">${V.chartEmptyMsg}</div>` : chartSVG(V.chart, ACCENT)}
+  </div>`;
+}
+
+function syncChip() {
+  const label = { syncing: 'syncing', synced: 'synced', pending: 'pending', off: 'sync off' }[syncState.state];
+  return `<span id="sync-chip" data-state="${syncState.state}">${label}</span>`;
+}
+
+function homeHtml(V) {
+  return `<div class="col" style="gap:14px;padding-top:4px">
+    <div class="row between">
+      <div class="col" style="gap:2px">
+        <span class="sub13">${V.todayLong} · ${syncChip()}</span>
+        <span class="h1">${greeting()}, Andries</span>
+      </div>
+      <button class="avatar" data-action="settings" aria-label="Settings">A</button>
+    </div>
+    ${V.showReminder ? `
+    <div class="reminder">
+      <div class="col" style="gap:3px">
+        <span class="reminder-title">${V.reminderTitle}</span>
+        <span class="reminder-sub">${V.reminderSub}</span>
+      </div>
+      <button class="reminder-btn" data-action="nav:log">Log now</button>
+    </div>` : ''}
+    <div class="row between" style="align-items:flex-end;padding:2px 4px">
+      <div class="col" style="gap:2px">
+        <span class="kicker">CURRENT</span>
+        <div class="row baseline" style="gap:6px">
+          <span class="bignum">${V.currentW}</span>
+          <span class="bignum-unit">${unit()}</span>
+        </div>
+      </div>
+      <span style="font:600 14px Inter;color:${V.weekDeltaColor};padding-bottom:6px">${V.weekDeltaText}</span>
+    </div>
+    ${chartCard(V)}
+    <div class="stat-grid">
+      <div class="stat" style="background:#e8b94a">
+        <span class="stat-num">${V.streak}</span>
+        <span class="stat-label">day streak</span>
+        <span class="stat-sub">Logged ${V.loggedPct} of the last 30 days</span>
+      </div>
+      <div class="stat" style="background:#b8a4ed">
+        <span class="stat-num">${V.bestMilestone}</span>
+        <span class="stat-label">${unit()} down</span>
+        <span class="stat-sub">${V.sinceLabel}</span>
+      </div>
+    </div>
+    <button class="banner" data-action="nav:goal">
+      <span class="banner-text">${V.predictText}</span>
+      <span class="banner-arrow">→</span>
+    </button>
+  </div>`;
+}
+
+function logHtml(V) {
+  const chips = NOTE_CHIPS.map((label, i) => {
+    const on = state.tags.includes(label);
+    return `<button data-action="tag:${i}" class="chip" style="background:${on ? '#0a0a0a' : '#f5f0e0'};color:${on ? '#ffffff' : '#3a3a3a'}">${label}</button>`;
+  }).join('');
+  const pad = PAD_KEYS.map((k) => `<button data-action="pad:${k}" class="pad">${k}</button>`).join('');
+  return `<div class="col" style="gap:16px;padding-top:4px">
+    <div class="row between">
+      <div class="col" style="gap:2px">
+        <span class="h1">Log weigh-in</span>
+        <span class="sub13">${V.todayLong}</span>
+      </div>
+      ${unitToggle()}
+    </div>
+    <div class="draft-card">
+      <div class="row baseline" style="gap:8px">
+        <span class="draft-num">${V.draftShow}</span>
+        <span class="draft-unit">${unit()}</span>
+      </div>
+      <span class="draft-delta" style="color:${V.draftDeltaColor}">${V.draftDelta}</span>
+    </div>
+    <div class="row between" style="gap:8px">
+      <span class="kicker-sm" style="align-self:center">DATE</span>
+      <input type="date" id="logdate" value="${state.logDate}" max="${todayLocal()}">
+    </div>
+    <div class="col" style="gap:8px">
+      <span class="kicker-sm">TAGS</span>
+      <div class="chips">${chips}</div>
+      ${state.suggested.length ? '<span class="suggest-hint">✦ Suggested from your usual pattern, tap to adjust</span>' : ''}
+      <input id="note" value="${esc(state.note)}" maxlength="120" placeholder="Add a note (optional)">
+    </div>
+    <div class="pad-grid">${pad}</div>
+    <button class="save-btn" data-action="save" style="background:${V.saveBg}">Save weigh-in</button>
+  </div>`;
+}
+
+function historyHtml(V) {
+  if (!V.entryCount) {
+    return `<div class="col" style="gap:18px;padding-top:4px">
+      <div class="col" style="gap:2px">
+        <span class="h1">History</span>
+        <span class="sub13">No weigh-ins yet</span>
+      </div>
+      <div class="card chart-empty">Your weigh-ins will appear here, week by week</div>
+    </div>`;
+  }
+  const weeks = V.historyWeeks.map((wk) => `
+    <div class="col" style="gap:8px">
+      <div class="row between">
+        <span class="kicker" style="letter-spacing:1.2px">${wk.label}</span>
+        <span class="wk-badge">avg ${wk.avg}</span>
+      </div>
+      <div class="card wk-card">
+        ${wk.rows.map((row) => `
+        <div class="wk-row">
+          <div class="wk-day"><b>${row.day}</b><span>${row.date}</span></div>
+          <div class="wk-main">
+            <span class="wk-w">${row.w} ${unit()}</span>
+            ${row.note ? `<span class="wk-note">${esc(row.note)}</span>` : ''}
+            ${row.tags.length ? `<div class="wk-tags">${row.tags.map((tg) => `<span class="wk-tag">${esc(tg)}</span>`).join('')}</div>` : ''}
+          </div>
+          <span class="wk-delta" style="color:${row.dcol}">${row.delta}</span>
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
+  return `<div class="col" style="gap:18px;padding-top:4px">
+    <div class="col" style="gap:2px">
+      <span class="h1">History</span>
+      <span class="sub13">${V.entryCount} weigh-ins ${V.sinceLabel}</span>
+    </div>
+    ${weeks}
+  </div>`;
+}
+
+function goalHtml(V) {
+  const ms = V.milestones.map((m) => `
+    <div class="card milestone" style="opacity:${m.op}">
+      <div class="milestone-badge" style="background:${m.badgeBg};color:${m.markC}">${m.mark}</div>
+      <div class="col" style="flex:1">
+        <span class="milestone-label">${m.label}</span>
+        <span class="milestone-sub">${m.sub}</span>
+      </div>
+    </div>`).join('');
+  return `<div class="col" style="gap:16px;padding-top:4px">
+    <div class="row between">
+      <span class="h1">Goal</span>
+      ${unitToggle()}
+    </div>
+    <div class="goal-card" style="background:${ACCENT}">
+      <span class="goal-kicker">GOAL WEIGHT</span>
+      <div class="row" style="gap:18px">
+        <button class="goal-step" data-action="goal:down">−</button>
+        <div class="row baseline" style="gap:6px">
+          <span class="goal-num">${V.goalDisplay}</span>
+          <span class="goal-unit">${unit()}</span>
+        </div>
+        <button class="goal-step" data-action="goal:up">+</button>
+      </div>
+      ${config.goalKg == null ? '<span class="goal-hint">Tap − or + to set a goal</span>' : ''}
+    </div>
+    <div class="card progress-card">
+      <div class="row between">
+        <span style="font:600 13px Inter">Progress</span>
+        <span style="font:600 13px Inter;color:#6a6a6a">${V.pctLabel}</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="background:${ACCENT};width:${V.pctW}"></div></div>
+      <div class="progress-ends">
+        <span>Start ${V.startLabel}</span>
+        <span style="color:#0a0a0a;font-weight:600">Now ${V.currentW}</span>
+        <span>Goal ${V.goalDisplay}</span>
+      </div>
+    </div>
+    <div class="forecast-card">
+      <span class="forecast-kicker">FORECAST</span>
+      <span class="forecast-text">${V.predictText}</span>
+      <span class="forecast-sub">Based on your 7-day trend, updated with every weigh-in</span>
+    </div>
+    ${V.milestones.length ? `<div class="col" style="gap:8px">
+      <span class="kicker-sm">MILESTONES</span>
+      ${ms}
+    </div>` : ''}
+  </div>`;
+}
+
+function tabsHtml() {
+  const C = (s) => state.screen === s ? '#0a0a0a' : '#9a9a9a';
+  return `
+    <button class="tab" data-action="nav:home">
+      <span class="tab-dot" style="background:${C('home')}"></span>
+      <span class="tab-label" style="color:${C('home')}">Home</span>
+    </button>
+    <button class="tab" data-action="nav:history">
+      <span class="tab-sq" style="background:${C('history')}"></span>
+      <span class="tab-label" style="color:${C('history')}">History</span>
+    </button>
+    <button class="tab-add" data-action="nav:log" style="background:${ACCENT}">+</button>
+    <button class="tab" data-action="nav:goal">
+      <span class="tab-diamond" style="background:${C('goal')}"></span>
+      <span class="tab-label" style="color:${C('goal')}">Goal</span>
+    </button>
+    <span class="tab-spacer"></span>`;
+}
+
+function celebHtml() {
+  return `<div class="celeb-back">
+    <div class="celeb">
+      <div class="confetti">
+        <span style="border-radius:50%;background:#ff4d8b"></span>
+        <span style="border-radius:3px;background:#e8b94a;transform:rotate(20deg)"></span>
+        <span style="border-radius:50%;background:#b8a4ed"></span>
+        <span style="border-radius:3px;background:#a4d4c5;transform:rotate(-15deg)"></span>
+        <span style="border-radius:50%;background:#ffb084"></span>
+      </div>
+      <span class="celeb-title">${esc(state.celeb)}</span>
+      <span class="celeb-sub">That calls for a little celebration. Your trend line is loving this.</span>
+      <button class="celeb-btn" data-action="dismiss">Keep going</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- render + events ---------- */
+
+function render() {
+  const V = compute();
+  const scroll = $('#scroll');
+  const sameScreen = scroll.dataset.screen === state.screen;
+  const keepScroll = sameScreen ? scroll.scrollTop : 0;
+  scroll.dataset.screen = state.screen;
+  scroll.innerHTML =
+    state.screen === 'home' ? homeHtml(V) :
+    state.screen === 'log' ? logHtml(V) :
+    state.screen === 'history' ? historyHtml(V) :
+    goalHtml(V);
+  scroll.scrollTop = keepScroll;
+  $('#tabbar').innerHTML = tabsHtml();
+  $('#overlay').innerHTML = state.celeb ? celebHtml() : '';
+  bind(V);
+}
+
+function bind(V) {
+  const note = $('#note');
+  if (note) note.addEventListener('input', (e) => { state.note = e.target.value; });
+  const logdate = $('#logdate');
+  if (logdate) logdate.addEventListener('change', (e) => { state.logDate = e.target.value || todayLocal(); });
+  const cf = $('#cfrom'), ct = $('#cto');
+  if (cf) cf.addEventListener('change', (e) => set({ cFrom: e.target.value, scrub: null }));
+  if (ct) ct.addEventListener('change', (e) => set({ cTo: e.target.value, scrub: null }));
+  bindChart(V);
+}
+
+/* Scrub updates touch only the readout and marker nodes, so the svg element
+   survives the drag and keeps receiving pointer events. */
+function bindChart(V) {
+  const svg = $('#chart');
+  if (!svg || V.chart.empty) return;
+  const pts = V.chart.pts;
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect();
+    const x = (ev.clientX - r.left) / r.width * 330;
+    let bi = 0, bd = 1e9;
+    pts.forEach((p, i) => { const d = Math.abs(p.x - x); if (d < bd) { bd = d; bi = i; } });
+    if (state.scrub !== bi) { state.scrub = bi; updateScrub(V); }
+  };
+  svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointermove', move);
+  svg.addEventListener('pointerleave', () => { state.scrub = null; updateScrub(V); });
+  if (state.scrub != null && state.scrub < pts.length) updateScrub(V);
+  else state.scrub = null;
+}
+
+function updateScrub(V) {
+  const line = $('#scrub-line'), dot = $('#scrub-dot');
+  const readout = $('#readout'), legend = $('#legend');
+  if (!line) return;
+  const pts = V.chart.pts || [];
+  const on = state.scrub != null && state.scrub < pts.length;
+  line.style.display = dot.style.display = on ? '' : 'none';
+  readout.style.display = on ? '' : 'none';
+  legend.style.display = on ? 'none' : '';
+  if (!on) return;
+  const p = pts[state.scrub];
+  line.setAttribute('x1', p.x.toFixed(1));
+  line.setAttribute('x2', p.x.toFixed(1));
+  dot.setAttribute('cx', p.x.toFixed(1));
+  dot.setAttribute('cy', p.y.toFixed(1));
+  const extra = [p.e.note, ...(p.e.tags || [])].filter(Boolean).map((x) => '· ' + x).join(' ');
+  const when = shortDate(p.e.date) + (p.e.time ? ', ' + p.e.time : '');
+  readout.innerHTML = `${fmt(p.e.weightKg)} ${unit()} · <span class="ro-date">${esc(when)}</span> <span class="ro-note">${esc(extra)}</span>`;
+}
+
+function padTap(k) {
+  const d = state.draft;
+  if (k === '⌫') return set({ draft: d.slice(0, -1) });
+  if (k === '.' && (d.includes('.') || !d)) return;
+  if (d.replace('.', '').length >= 4 && k !== '.') return;
+  set({ draft: d + k });
+}
+
+async function save() {
+  const parsed = parseWeightToKg(state.draft, unit());
+  if (state.draft === '' || !parsed.ok) return;
+  const kg = parsed.kg;
+  const date = state.logDate || todayLocal();
+  const isToday = date === todayLocal();
+  let celeb = null;
+  if (isToday && alive.length) {
+    const prevMin = Math.min(...alive.map((e) => e.weightKg));
+    const startW = alive[0].weightKg;
+    const goal = Number.isFinite(config.goalKg) ? config.goalKg : null;
+    if (goal != null && kg <= goal) celeb = 'Goal reached!';
+    else if (kg < prevMin && Math.floor(startW - kg) > Math.floor(startW - prevMin)) {
+      const down = Math.floor(startW - kg);
+      celeb = (unit() === 'kg' ? down + ' kg' : Math.round(kgToLbs(down)) + ' lbs') + ' down!';
+    }
+  }
+  await putEntry(db, {
+    date, weightKg: kg,
+    note: state.note.trim() || '',
+    tags: state.tags,
+    ...(isToday ? { time: hhmm() } : {}),
+    updatedAt: new Date().toISOString(),
+  });
+  Object.assign(state, { draft: '', note: '', tags: [], suggested: [], screen: 'home', scrub: null, celeb, logDate: todayLocal() });
+  await refresh();
+  sync();
+}
+
+/* ---------- settings + sync ---------- */
+
+function setStatus(s, msg = '') {
+  syncState = { state: s, msg };
+  const chip = $('#sync-chip');
+  if (chip) {
+    chip.dataset.state = s;
+    chip.textContent = { syncing: 'syncing', synced: 'synced', pending: 'pending', off: 'sync off' }[s];
+  }
+  const m = $('#cfg-msg');
+  if (m) m.textContent = msg;
 }
 
 async function sync() {
-  if (!config.token || !config.repo) { setStatus('off'); return; }
+  if (!config.repo || !config.token) { setStatus('off'); return; }
   if (!navigator.onLine) { setStatus('pending'); return; }
   await runSync({
     getLocal: () => getAllEntries(db),
     saveLocal: (entries) => mergeReplaceEntries(db, entries, mergeEntries),
     pull: () => pullData({ repo: config.repo, token: config.token }),
     push: (entries, sha) => pushData({ repo: config.repo, token: config.token, entries, sha }),
-    onStatus: (state, msg) => setStatus(state, msg),
+    onStatus: setStatus,
   });
-  render();
-}
-
-function showFormError(msg) {
-  const el = $('form-error');
-  el.textContent = msg || '';
-  el.hidden = !msg;
-}
-
-async function onSubmit(e) {
-  e.preventDefault();
-  const parsed = parseWeightToKg($('weight').value, config.unit || 'kg');
-  if (!parsed.ok) { showFormError(parsed.error); return; }
-  showFormError('');
-  await putEntry(db, {
-    date: $('date').value || todayLocal(),
-    weightKg: parsed.kg,
-    note: $('note').value.trim(),
-    updatedAt: new Date().toISOString(),
-  });
-  $('weight').value = '';
-  $('note').value = '';
-  $('date').value = todayLocal();
-  await render();
-  sync();
+  await refresh();
 }
 
 function openSettings() {
-  $('cfg-goal').value = config.goalKg ?? '';
-  $('cfg-unit').value = config.unit || 'kg';
-  $('cfg-repo').value = config.repo || '';
-  $('cfg-token').value = config.token || '';
-  $('settings').showModal();
+  $('#cfg-repo').value = config.repo || '';
+  $('#cfg-token').value = config.token || '';
+  $('#cfg-msg').textContent = syncState.msg || '';
+  $('#settings').showModal();
 }
 
 function saveSettings() {
-  const goal = Number(String($('cfg-goal').value).replace(',', '.'));
-  config.goalKg = Number.isFinite(goal) && goal > 0 ? goal : null;
-  config.unit = $('cfg-unit').value;
-  config.repo = $('cfg-repo').value.trim();
-  config.token = $('cfg-token').value.trim();
+  config.repo = $('#cfg-repo').value.trim();
+  config.token = $('#cfg-token').value.trim();
   saveConfig();
   render();
   sync();
@@ -111,22 +618,67 @@ async function exportJson() {
   URL.revokeObjectURL(a.href);
 }
 
+async function refresh() {
+  const all = await getAllEntries(db);
+  alive = sortByDate(all.filter((e) => !e.deleted));
+  render();
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const a = el.dataset.action;
+  const sep = a.indexOf(':');
+  const act = sep === -1 ? a : a.slice(0, sep);
+  const arg = sep === -1 ? '' : a.slice(sep + 1);
+  switch (act) {
+    case 'nav': {
+      const patch = { screen: arg, scrub: null };
+      if (arg === 'log') {
+        patch.logDate = todayLocal();
+        if (!state.draft && !state.tags.length) {
+          const sug = suggestTags(alive, new Date());
+          if (sug.length) { patch.tags = sug; patch.suggested = sug; }
+        }
+      }
+      set(patch);
+      break;
+    }
+    case 'range': set({ range: arg, scrub: null }); break;
+    case 'unit': config.unit = arg; saveConfig(); set({ draft: '' }); break;
+    case 'pad': padTap(arg); break;
+    case 'tag': {
+      const label = NOTE_CHIPS[+arg];
+      set({ tags: state.tags.includes(label) ? state.tags.filter((x) => x !== label) : state.tags.concat(label), suggested: [] });
+      break;
+    }
+    case 'tfilter': {
+      const label = allTags()[+arg];
+      if (!label) break;
+      set({ tagFilter: state.tagFilter.includes(label) ? state.tagFilter.filter((x) => x !== label) : state.tagFilter.concat(label), scrub: null });
+      break;
+    }
+    case 'goal': {
+      const base = Number.isFinite(config.goalKg) ? config.goalKg
+        : alive.length ? Math.round(alive[alive.length - 1].weightKg * 2) / 2 : 75;
+      config.goalKg = Math.round((base + (arg === 'up' ? 0.5 : -0.5)) * 10) / 10;
+      saveConfig();
+      render();
+      break;
+    }
+    case 'save': save(); break;
+    case 'dismiss': set({ celeb: null }); break;
+    case 'settings': openSettings(); break;
+    default: break;
+  }
+});
+
 async function main() {
   db = await openDB();
-  $('date').value = todayLocal();
-  $('entry-form').addEventListener('submit', onSubmit);
-  $('settings-btn').addEventListener('click', openSettings);
-  $('save-settings').addEventListener('click', saveSettings);
-  $('export-btn').addEventListener('click', exportJson);
-  document.querySelectorAll('#range-row button').forEach((b) =>
-    b.addEventListener('click', () => {
-      rangeDays = Number(b.dataset.range);
-      document.querySelectorAll('#range-row button').forEach((x) => x.classList.toggle('active', x === b));
-      render();
-    })
-  );
+  $('#save-settings').addEventListener('click', saveSettings);
+  $('#export-btn').addEventListener('click', exportJson);
   window.addEventListener('online', sync);
-  await render();
+  await refresh();
   sync();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

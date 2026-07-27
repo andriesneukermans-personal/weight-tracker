@@ -36,12 +36,12 @@ function makePng(size) {
     const row = y * (size * 4 + 1);
     raw[row] = 0; // filter byte: none
     for (let x = 0; x < size; x++) {
-      let px = [15, 23, 42]; // background #0f172a
+      let px = [255, 77, 139]; // background #ff4d8b (Clai accent)
       if (distToSeg(x, y, pts[0], pts[1]) < size * 0.04 || distToSeg(x, y, pts[1], pts[2]) < size * 0.04) {
-        px = [56, 189, 248]; // accent line #38bdf8
+        px = [255, 250, 240]; // trend line #fffaf0 (cream)
       }
       for (const [cx, cy] of pts) {
-        if ((x - cx) ** 2 + (y - cy) ** 2 < (size * 0.07) ** 2) px = [224, 242, 254]; // dots #e0f2fe
+        if ((x - cx) ** 2 + (y - cy) ** 2 < (size * 0.07) ** 2) px = [26, 58, 58]; // dots #1a3a3a
       }
       const o = row + 1 + x * 4;
       raw[o] = px[0];
