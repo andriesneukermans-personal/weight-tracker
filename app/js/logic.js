@@ -41,3 +41,26 @@ export function parseWeightToKg(raw, unit) {
   }
   return { ok: true, kg: Math.round(kg * 100) / 100 };
 }
+
+export function entriesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  const sa = sortByDate(a);
+  const sb = sortByDate(b);
+  return sa.every((e, i) =>
+    e.date === sb[i].date &&
+    e.weightKg === sb[i].weightKg &&
+    (e.note || '') === (sb[i].note || '') &&
+    e.updatedAt === sb[i].updatedAt
+  );
+}
+
+export function mergeEntries(local, remote) {
+  const byDate = new Map();
+  for (const e of remote) byDate.set(e.date, e);
+  for (const e of local) {
+    const r = byDate.get(e.date);
+    if (!r || e.updatedAt > r.updatedAt) byDate.set(e.date, e);
+  }
+  const merged = sortByDate([...byDate.values()]);
+  return { merged, pushNeeded: !entriesEqual(merged, remote) };
+}
