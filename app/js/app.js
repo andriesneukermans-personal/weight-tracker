@@ -128,6 +128,9 @@ async function main() {
   window.addEventListener('online', sync);
   await render();
   sync();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
 }
 
 main();
