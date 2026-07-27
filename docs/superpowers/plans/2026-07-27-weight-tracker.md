@@ -45,7 +45,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "TZ=America/New_York node --test tests/"
+    "test": "TZ=America/New_York node --test"
   }
 }
 ```
