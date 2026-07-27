@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>store.js test</title>
+<pre id="out">running</pre>
+<script type="module">
+import { openDB, getAllEntries, putEntry, replaceAllEntries } from '../../app/js/store.js';
+const out = document.getElementById('out');
+const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+try {
+  await new Promise((res) => {
+    const d = indexedDB.deleteDatabase('wt-test');
+    d.onsuccess = d.onerror = d.onblocked = res;
+  });
+  const db = await openDB('wt-test');
+  await putEntry(db, { date: '2026-07-27', weightKg: 82.4, note: '', updatedAt: '2026-07-27T08:00:00Z' });
+  await putEntry(db, { date: '2026-07-27', weightKg: 82.1, note: 'x', updatedAt: '2026-07-27T09:00:00Z' });
+  let all = await getAllEntries(db);
+  assert(all.length === 1, 'same-date put must overwrite, got ' + all.length);
+  assert(all[0].weightKg === 82.1, 'latest write must win');
+  await replaceAllEntries(db, [
+    { date: '2026-07-25', weightKg: 82.8, note: '', updatedAt: '2026-07-25T08:00:00Z' },
+    { date: '2026-07-26', weightKg: 82.6, note: '', updatedAt: '2026-07-26T08:00:00Z' },
+  ]);
+  all = await getAllEntries(db);
+  assert(all.length === 2, 'replaceAll must swap the dataset');
+  out.textContent = 'PASS';
+} catch (e) {
+  out.textContent = 'FAIL: ' + e.message;
+}
+</script>
