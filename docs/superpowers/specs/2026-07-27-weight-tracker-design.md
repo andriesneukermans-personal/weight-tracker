@@ -42,6 +42,8 @@ Entry (stored in IndexedDB and in `data.json`):
 - The entry date is the **local** calendar date, built from `getFullYear()`/`getMonth()+1`/`getDate()`. Never derive it via `toISOString()`, which shifts to UTC and near midnight stamps the wrong day.
 - Weight is always stored in kg. Display unit (kg/lbs) is a client-side preference.
 - `note` is optional. `updatedAt` drives merge resolution.
+- Optional `"deleted": true` marks a tombstone (created only by hand-editing `data.json`); tombstones merge like normal entries, may omit `weightKg`, and are hidden by the UI.
+- Sync writes into IndexedDB atomically merge with the store's current contents in one transaction (never a blind replace), so an entry logged while a sync is in flight cannot be clobbered by the sync's stale snapshot.
 
 Local-only settings (localStorage, deliberately not synced because they are trivially re-enterable): goal weight, display unit, GitHub token, data repo name.
 
@@ -69,7 +71,7 @@ Single mobile-first screen, top to bottom:
 3. **Stat row**: current trend weight, 30-day change, distance to goal.
 4. **Settings** (behind a small gear): goal weight, kg/lbs toggle, GitHub token + repo, JSON export button as a belt-and-braces backup.
 
-Empty state (no entries yet) explains the app in one line and points at the form. Corrections: re-log the same date to overwrite; deleting an entry is done by editing `data.json` in GitHub (explicit YAGNI: no in-app delete).
+Empty state (no entries yet) explains the app in one line and points at the form. Corrections: re-log the same date to overwrite; deleting an entry is done by editing `data.json` in GitHub and setting `"deleted": true` on that entry (a tombstone). Simply removing the row does not work: the offline-first union merge cannot distinguish "deleted remotely" from "created locally while offline" and would resurrect it. The app hides tombstoned entries from the chart, stats, and trend but keeps them in the dataset. Explicit YAGNI: no in-app delete.
 
 ## Error handling
 
