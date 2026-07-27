@@ -1563,13 +1563,14 @@ git commit -m "feat: PWA layer with same-origin-only service worker"
 ### Task 11: Deployment and end-to-end verification
 
 **Files:**
-- No new project files. Creates two GitHub repos and deploys `app/` as the site root.
+- Create: `.github/workflows/pages.yml`
+- Also creates two GitHub repos under the `andriesneukermans-personal` account and deploys `app/` via GitHub Actions.
 
 **Interfaces:**
 - Consumes: the complete `app/` directory
-- Produces: live site at `https://<OWNER>.github.io/weight-tracker/`, private repo `<OWNER>/weight-tracker-data`
+- Produces: live site at `https://andriesneukermans-personal.github.io/weight-tracker/`, private repo `andriesneukermans-personal/weight-tracker-data`
 
-**Note:** the project lives inside a larger personal git repo, so the app repo is created from a scratch copy, not by pushing this repo.
+**Note:** this project directory IS the app repo (`/Users/andries/Claude/weight-tracker`). Pages cannot serve an `/app` subfolder directly, so an Actions workflow publishes `app/` as the Pages artifact. Push to main = deploy. The user's SSH key belongs to a different GitHub account; all git/API auth for this account goes through `gh` (HTTPS).
 
 - [ ] **Step 1: Preflight**
 
@@ -1579,7 +1580,7 @@ OWNER=$(gh api user --jq .login)
 echo "$OWNER"
 ```
 
-Expected: authenticated, owner login printed. If `gh` is not authenticated, stop and ask the user to run `! gh auth login`.
+Expected: authenticated as `andriesneukermans-personal` and that login printed. If not authenticated or the wrong account, stop and ask the user to run `! gh auth login` (HTTPS protocol, the andriesneukermans-personal account, yes to configuring git credentials).
 
 - [ ] **Step 2: Create the private data repo**
 
@@ -1590,37 +1591,54 @@ gh repo view "$OWNER/weight-tracker-data" --json visibility --jq .visibility
 
 Expected: second command prints `PRIVATE`. Stop immediately if it does not.
 
-- [ ] **Step 3: Create and push the app repo from a scratch copy**
+- [ ] **Step 3: Add the Pages deploy workflow**
 
-```bash
-SCRATCH="/private/tmp/claude-501/-Users-andries-Claude-claude-projects-Health-Tracker-App/7bd5331f-4cd6-4efe-a14f-b73d3f6e4932/scratchpad/deploy-site"
-rm -rf "$SCRATCH"
-mkdir -p "$SCRATCH"
-rsync -a app/ "$SCRATCH/"
-cd "$SCRATCH"
-git init -b main
-git add -A
-git commit -m "Weight tracker v1"
-gh repo create "$OWNER/weight-tracker" --public --source . --push
-cd -
+`.github/workflows/pages.yml`:
+
+```yaml
+name: Deploy Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app
+      - id: deployment
+        uses: actions/deploy-pages@v4
 ```
 
-Expected: repo created and pushed. Future deploys repeat this rsync + commit + `git push` into the same repo.
+```bash
+git add .github/workflows/pages.yml
+git commit -m "ci: deploy app/ to GitHub Pages"
+```
 
-- [ ] **Step 4: Enable GitHub Pages and wait for the build**
+- [ ] **Step 4: Create the app repo, enable workflow-based Pages, push, wait for deploy**
 
 ```bash
-gh api -X POST "repos/$OWNER/weight-tracker/pages" -f "source[branch]=main" -f "source[path]=/"
-for i in $(seq 1 30); do
-  s=$(gh api "repos/$OWNER/weight-tracker/pages" --jq .status)
-  echo "pages status: $s"
-  [ "$s" = "built" ] && break
-  sleep 10
-done
+gh repo create "$OWNER/weight-tracker" --public --source . --push
+gh api -X POST "repos/$OWNER/weight-tracker/pages" -f build_type=workflow
+gh run watch --exit-status || { echo "Pages workflow failed"; gh run view --log-failed; }
 curl -sI "https://$OWNER.github.io/weight-tracker/" | head -1
 ```
 
-Expected: final curl prints `HTTP/2 200`.
+Expected: workflow completes successfully and the final curl prints `HTTP/2 200`. If the Pages API call says Pages is already enabled, that is fine. Future deploys are just `git push`.
 
 - [ ] **Step 5: User creates the token (user action, blocked on them)**
 
