@@ -59,3 +59,19 @@ test('pushData maps 409 and 422 to SyncError kind conflict', async () => {
     );
   }
 });
+
+test('pullData maps unparseable content to SyncError kind data', async () => {
+  const body = { sha: 'abc', content: '!!!not-base64!!!' };
+  await assert.rejects(
+    pullData({ repo: 'a/b', token: 't', fetchFn: async () => fakeRes(200, body) }),
+    (e) => e instanceof SyncError && e.kind === 'data'
+  );
+});
+
+test('pullData maps schema-corrupt data.json to SyncError kind data', async () => {
+  const body = { sha: 'abc', content: encodeContent({ wrong: true }) };
+  await assert.rejects(
+    pullData({ repo: 'a/b', token: 't', fetchFn: async () => fakeRes(200, body) }),
+    (e) => e instanceof SyncError && e.kind === 'data'
+  );
+});
