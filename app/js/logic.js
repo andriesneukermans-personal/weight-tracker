@@ -64,3 +64,27 @@ export function mergeEntries(local, remote) {
   const merged = sortByDate([...byDate.values()]);
   return { merged, pushNeeded: !entriesEqual(merged, remote) };
 }
+
+export function movingAverage(entries, windowDays = 7) {
+  const sorted = sortByDate(entries);
+  return sorted.map((e) => {
+    const from = addDays(e.date, -(windowDays - 1));
+    const inWindow = sorted.filter((x) => x.date >= from && x.date <= e.date);
+    const avg = inWindow.reduce((s, x) => s + x.weightKg, 0) / inWindow.length;
+    return { date: e.date, avgKg: Math.round(avg * 100) / 100 };
+  });
+}
+
+export function computeStats(entries, goalKg) {
+  if (entries.length === 0) return null;
+  const trend = movingAverage(entries);
+  const current = trend[trend.length - 1];
+  const cutoff = addDays(current.date, -30);
+  const past = [...trend].reverse().find((t) => t.date <= cutoff) || null;
+  const round = (n) => Math.round(n * 100) / 100;
+  return {
+    trendKg: current.avgKg,
+    change30dKg: past ? round(current.avgKg - past.avgKg) : null,
+    toGoalKg: goalKg ? round(current.avgKg - goalKg) : null,
+  };
+}
