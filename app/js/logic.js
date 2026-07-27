@@ -85,6 +85,6 @@ export function computeStats(entries, goalKg) {
   return {
     trendKg: current.avgKg,
     change30dKg: past ? round(current.avgKg - past.avgKg) : null,
-    toGoalKg: goalKg ? round(current.avgKg - goalKg) : null,
+    toGoalKg: goalKg == null ? null : round(current.avgKg - goalKg),
   };
 }

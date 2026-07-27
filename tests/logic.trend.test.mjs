@@ -29,3 +29,8 @@ test('computeStats handles missing history and goal', () => {
   assert.equal(s.change30dKg, null);
   assert.equal(s.toGoalKg, null);
 });
+
+test('computeStats treats goalKg 0 as a real goal, not missing', () => {
+  const s = computeStats([E('2026-07-27', 82.4)], 0);
+  assert.equal(s.toGoalKg, 82.4);
+});
