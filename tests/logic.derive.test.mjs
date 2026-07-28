@@ -79,3 +79,34 @@ test('suggestTags: consistently untagged logging suppresses the morning default'
   }
   assert.deepEqual(suggestTags(entries, new Date(2026, 6, 27, 7, 0)), []);
 });
+
+test('suggestTags: a declared rule fires cold, within its window only', () => {
+  const rules = { 'After sauna': { time: 'evening', days: null } };
+  assert.deepEqual(suggestTags([], new Date(2026, 6, 27, 19, 0), rules), ['After sauna']);
+  assert.deepEqual(suggestTags([], new Date(2026, 6, 27, 14, 0), rules), []);
+});
+
+test('suggestTags: a declared rule respects its day constraint', () => {
+  const rules = { Traveling: { time: null, days: 'weekend' } };
+  // 2026-07-27 is a Monday, 2026-07-26 a Sunday
+  assert.deepEqual(suggestTags([], new Date(2026, 6, 27, 12, 0), rules), []);
+  assert.deepEqual(suggestTags([], new Date(2026, 6, 26, 12, 0), rules), ['Traveling']);
+});
+
+test('suggestTags: untagged logging after tag creation silences a declared rule', () => {
+  const rules = { 'After sauna': { time: 'evening', days: null, since: '2026-07-17' } };
+  const entries = [];
+  for (let i = 1; i <= 10; i++) {
+    entries.push(E(addDays('2026-07-27', -i), 82, { time: '19:00', tags: [] }));
+  }
+  assert.deepEqual(suggestTags(entries, new Date(2026, 6, 27, 19, 0), rules), []);
+});
+
+test('suggestTags: history from before the tag existed does not silence its rule', () => {
+  const rules = { 'After sauna': { time: 'evening', days: null, since: '2026-07-27' } };
+  const entries = [];
+  for (let i = 1; i <= 10; i++) {
+    entries.push(E(addDays('2026-07-27', -i), 82, { time: '19:00', tags: [] }));
+  }
+  assert.deepEqual(suggestTags(entries, new Date(2026, 6, 27, 19, 0), rules), ['After sauna']);
+});

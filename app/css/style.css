@@ -121,11 +121,17 @@ input{font-family:inherit}
 .chip-rm{color:#9a9a9a;font-weight:600;margin-left:2px}
 .chip-add{background:transparent;border:1px dashed #c9c2ae;color:#6a6a6a}
 .chip-input{border:1px solid #e5e5e5;background:#fffaf0;color:#0a0a0a;outline:none;width:120px}
+.rule-done{background:#0a0a0a;color:#fff}
+.log-del{display:flex;align-items:center;justify-content:center;gap:10px;min-height:36px}
+.del-link{font:600 13px Inter;color:#ef4444;padding:8px}
+.del-sure{font:500 13px Inter;color:#3a3a3a}
+.del-confirm{font:600 13px Inter;color:#fff;background:#ef4444;border-radius:10px;padding:8px 14px}
+.del-keep{font:600 13px Inter;color:#0a0a0a;background:#f5f0e0;border-radius:10px;padding:8px 14px}
 
 /* history */
 .wk-badge{font:600 12px Inter;color:#0a1a1a;background:#a4d4c5;border-radius:9999px;padding:4px 10px}
 .wk-card{padding:4px 16px;display:flex;flex-direction:column}
-.wk-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #f2edde}
+.wk-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #f2edde;cursor:pointer}
 .wk-row:last-child{border-bottom:none}
 .wk-day{display:flex;flex-direction:column;width:52px;flex:none}
 .wk-day b{font:600 13px Inter}
@@ -198,14 +204,15 @@ input{font-family:inherit}
   .screen-home .stat-grid{grid-area:stats}
   .screen-home .banner{grid-area:banner}
   .screen-log{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px;align-content:start;
-    grid-template-rows:auto auto auto minmax(0,1fr) auto;
-    grid-template-areas:"lheader pad" "draft pad" "note pad" "fold pad" "fold save"}
+    grid-template-rows:auto auto auto minmax(0,1fr) auto auto;
+    grid-template-areas:"lheader pad" "draft pad" "note pad" "fold pad" "fold save" "del del"}
   .log-header{grid-area:lheader}
   .screen-log .draft-card{grid-area:draft}
   .log-note{grid-area:note}
   .log-fold{grid-area:fold;align-content:start}
   .screen-log .pad-grid{grid-area:pad;align-content:start}
   .screen-log .save-btn{grid-area:save;align-self:end}
+  .log-del{grid-area:del}
   .screen-history,.screen-goal{max-width:560px;width:100%;margin:0 auto}
 }
 

@@ -31,6 +31,7 @@ const savedUi = JSON.parse(localStorage.getItem(UI_KEY) || '{}');
 const state = {
   screen: 'home', scrub: null, draft: '', note: '', tags: [], suggested: [],
   celeb: null, tagFilter: [], logOpen: false, tagEdit: false, newTag: null,
+  editing: null, pendingTag: null, ruleTime: null, ruleDays: null, confirmDelete: false,
   range: savedUi.range || '3M',
   cFrom: savedUi.cFrom || addDays(todayLocal(), -56),
   cTo: savedUi.cTo || todayLocal(),
@@ -75,17 +76,32 @@ function commitNewTag() {
   if (state.newTag == null) return;
   const name = state.newTag.trim();
   if (!name) { set({ newTag: null }); return; }
+  if (tagPalette().includes(name)) {
+    set({ newTag: null, tags: state.tags.includes(name) ? state.tags : state.tags.concat(name), suggested: [] });
+    return;
+  }
+  set({ newTag: null, pendingTag: name, ruleTime: null, ruleDays: null });
+}
+
+function finalizeNewTag(withRule) {
+  const name = state.pendingTag;
+  if (!name) return;
   config.customTags = config.customTags || [];
   config.hiddenTags = (config.hiddenTags || []).filter((t) => t !== name);
-  if (!tagPalette().includes(name) && !config.customTags.includes(name)) config.customTags.push(name);
+  if (!config.customTags.includes(name)) config.customTags.push(name);
+  if (withRule && (state.ruleTime || state.ruleDays)) {
+    config.tagRules = config.tagRules || {};
+    config.tagRules[name] = { time: state.ruleTime, days: state.ruleDays, since: todayLocal() };
+  }
   saveConfig();
-  set({ newTag: null, tags: state.tags.includes(name) ? state.tags : state.tags.concat(name), suggested: [] });
+  set({ pendingTag: null, ruleTime: null, ruleDays: null, tags: state.tags.concat(name), suggested: [] });
 }
 
 function removeTag(label) {
   config.customTags = (config.customTags || []).filter((t) => t !== label);
   config.hiddenTags = config.hiddenTags || [];
   if (!config.hiddenTags.includes(label)) config.hiddenTags.push(label);
+  if (config.tagRules) delete config.tagRules[label];
   saveConfig();
   set({ tags: state.tags.filter((t) => t !== label), suggested: [] });
 }
@@ -179,6 +195,7 @@ function compute() {
         const d = pi >= 0 ? disp(e.weightKg - es[pi].weightKg) : 0;
         const date = parseDateLocal(e.date);
         return {
+          iso: e.date,
           day: DOW[date.getDay()], date: shortDate(e.date), w: fmt(e.weightKg),
           delta: (d <= 0 ? '−' : '+') + Math.abs(d).toFixed(1),
           dcol: d <= 0 ? '#1a8a4a' : '#ef4444',
@@ -342,15 +359,39 @@ function logHtml(V) {
   }).join('');
   const newChip = state.newTag != null
     ? `<input id="newtag" class="chip chip-input" value="${esc(state.newTag)}" maxlength="30" placeholder="tag name">`
-    : `<button data-action="tagnew" class="chip chip-add">+ New</button>`;
+    : state.pendingTag == null
+      ? `<button data-action="tagnew" class="chip chip-add">+ New</button>`
+      : '';
+  const ruleChip = (action, label, on) =>
+    `<button data-action="${action}" class="chip" style="background:${on ? '#0a0a0a' : '#f5f0e0'};color:${on ? '#ffffff' : '#3a3a3a'}">${label}</button>`;
+  const rulePicker = state.pendingTag == null ? '' : `
+      <div class="col" style="gap:8px">
+        <span class="suggest-hint">When would you use “${esc(state.pendingTag)}”?</span>
+        <div class="chips">
+          ${ruleChip('ruletime:morning', 'Morning', state.ruleTime === 'morning')}
+          ${ruleChip('ruletime:afternoon', 'Afternoon', state.ruleTime === 'afternoon')}
+          ${ruleChip('ruletime:evening', 'Evening', state.ruleTime === 'evening')}
+          ${ruleChip('ruletime:night', 'Night', state.ruleTime === 'night')}
+          ${ruleChip('ruletime:any', 'Anytime', !state.ruleTime)}
+        </div>
+        <div class="chips">
+          ${ruleChip('ruledays:weekday', 'Weekdays', state.ruleDays === 'weekday')}
+          ${ruleChip('ruledays:weekend', 'Weekend', state.ruleDays === 'weekend')}
+          ${ruleChip('ruledays:any', 'Any day', !state.ruleDays)}
+        </div>
+        <div class="row" style="gap:8px;justify-content:flex-end">
+          <button class="tag-edit-btn" data-action="ruleskip">Skip</button>
+          <button class="tag-edit-btn rule-done" data-action="ruledone">Done</button>
+        </div>
+      </div>`;
   const dateLabel = state.logDate === todayLocal() ? 'Today' : shortDate(state.logDate);
   const tagSummary = state.tags.length ? state.tags.join(', ') : 'no tags';
   const pad = PAD_KEYS.map((k) => `<button data-action="pad:${k}" class="pad">${k}</button>`).join('');
   return `<div class="col screen screen-log">
     <div class="row between log-header">
       <div class="col" style="gap:2px">
-        <span class="h1">Log weigh-in</span>
-        <span class="sub13">${V.todayLong}</span>
+        <span class="h1">${state.editing ? 'Edit weigh-in' : 'Log weigh-in'}</span>
+        <span class="sub13">${state.editing ? DOW_LONG[parseDateLocal(state.logDate).getDay()] + ', ' + shortDate(state.logDate) : V.todayLong}</span>
       </div>
       ${unitToggle()}
     </div>
@@ -378,11 +419,17 @@ function logHtml(V) {
           <button class="tag-edit-btn" data-action="tagedit">${state.tagEdit ? 'Done' : 'Edit'}</button>
         </div>
         <div class="chips">${chips}${newChip}</div>
+        ${rulePicker}
         ${state.suggested.length ? '<span class="suggest-hint">✦ Suggested from your usual pattern, tap to adjust</span>' : ''}
       </div>` : ''}
     </div>
     <div class="pad-grid">${pad}</div>
-    <button class="save-btn" data-action="save" style="background:${V.saveBg}">Save weigh-in</button>
+    <button class="save-btn" data-action="save" style="background:${V.saveBg}">${state.editing ? 'Update weigh-in' : 'Save weigh-in'}</button>
+    ${state.editing ? `<div class="log-del">${state.confirmDelete
+      ? `<span class="del-sure">Delete this weigh-in?</span>
+         <button class="del-confirm" data-action="delyes">Delete</button>
+         <button class="del-keep" data-action="delno">Keep</button>`
+      : '<button class="del-link" data-action="delask">Delete this weigh-in</button>'}</div>` : ''}
   </div>`;
 }
 
@@ -404,7 +451,7 @@ function historyHtml(V) {
       </div>
       <div class="card wk-card">
         ${wk.rows.map((row) => `
-        <div class="wk-row">
+        <div class="wk-row" data-action="edit:${row.iso}">
           <div class="wk-day"><b>${row.day}</b><span>${row.date}</span></div>
           <div class="wk-main">
             <span class="wk-w">${row.w} ${unit()}</span>
@@ -600,9 +647,10 @@ async function save() {
   if (state.draft === '' || !parsed.ok) return;
   const kg = parsed.kg;
   const date = state.logDate || todayLocal();
+  const editing = state.editing;
   const isToday = date === todayLocal();
   let celeb = null;
-  if (isToday && alive.length) {
+  if (!editing && isToday && alive.length) {
     const prevMin = Math.min(...alive.map((e) => e.weightKg));
     const startW = alive[0].weightKg;
     const goal = Number.isFinite(config.goalKg) ? config.goalKg : null;
@@ -612,14 +660,37 @@ async function save() {
       celeb = (unit() === 'kg' ? down + ' kg' : Math.round(kgToLbs(down)) + ' lbs') + ' down!';
     }
   }
+  const now = new Date().toISOString();
+  // moving an edited entry to another date tombstones the original
+  if (editing && editing !== date) {
+    await putEntry(db, { date: editing, deleted: true, updatedAt: now });
+  }
+  const original = editing ? alive.find((e) => e.date === editing) : null;
+  const time = editing
+    ? (original && original.time ? original.time : null)
+    : (isToday ? hhmm() : null);
   await putEntry(db, {
     date, weightKg: kg,
     note: state.note.trim() || '',
     tags: state.tags,
-    ...(isToday ? { time: hhmm() } : {}),
-    updatedAt: new Date().toISOString(),
+    ...(time ? { time } : {}),
+    updatedAt: now,
   });
-  Object.assign(state, { draft: '', note: '', tags: [], suggested: [], screen: 'home', scrub: null, celeb, logDate: todayLocal() });
+  Object.assign(state, {
+    draft: '', note: '', tags: [], suggested: [], editing: null, confirmDelete: false,
+    screen: editing ? 'history' : 'home', scrub: null, celeb, logDate: todayLocal(),
+  });
+  await refresh();
+  sync();
+}
+
+async function deleteEntry() {
+  if (!state.editing) return;
+  await putEntry(db, { date: state.editing, deleted: true, updatedAt: new Date().toISOString() });
+  Object.assign(state, {
+    draft: '', note: '', tags: [], suggested: [], editing: null, confirmDelete: false,
+    screen: 'history', scrub: null, logDate: todayLocal(),
+  });
   await refresh();
   sync();
 }
@@ -696,8 +767,18 @@ document.addEventListener('click', (e) => {
         patch.logOpen = false;
         patch.tagEdit = false;
         patch.newTag = null;
-        if (!state.draft && !state.tags.length) {
-          const sug = suggestTags(alive, new Date()).filter((t) => tagPalette().includes(t));
+        patch.pendingTag = null;
+        patch.confirmDelete = false;
+        if (state.editing) {
+          patch.editing = null;
+          patch.draft = '';
+          patch.note = '';
+          patch.tags = [];
+        }
+        const draft = patch.draft != null ? patch.draft : state.draft;
+        const tags = patch.tags || state.tags;
+        if (!draft && !tags.length) {
+          const sug = suggestTags(alive, new Date(), config.tagRules || {}).filter((t) => tagPalette().includes(t));
           if (sug.length) { patch.tags = sug; patch.suggested = sug; }
         }
       }
@@ -719,6 +800,24 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'tagnew': set({ newTag: '' }); break;
+    case 'ruletime': set({ ruleTime: arg === 'any' ? null : arg }); break;
+    case 'ruledays': set({ ruleDays: arg === 'any' ? null : arg }); break;
+    case 'ruledone': finalizeNewTag(true); break;
+    case 'ruleskip': finalizeNewTag(false); break;
+    case 'edit': {
+      const e = alive.find((x) => x.date === arg);
+      if (!e) break;
+      set({
+        screen: 'log', editing: e.date, logDate: e.date,
+        draft: disp(e.weightKg).toFixed(1), note: e.note || '', tags: [...(e.tags || [])],
+        suggested: [], logOpen: false, tagEdit: false, newTag: null, pendingTag: null,
+        confirmDelete: false, scrub: null,
+      });
+      break;
+    }
+    case 'delask': set({ confirmDelete: true }); break;
+    case 'delno': set({ confirmDelete: false }); break;
+    case 'delyes': deleteEntry(); break;
     case 'tagedit': set({ tagEdit: !state.tagEdit, newTag: null }); break;
     case 'fold': set({ logOpen: !state.logOpen, tagEdit: false, newTag: null }); break;
     case 'tfilter': {

@@ -139,6 +139,25 @@ export function forecast(entries, goalKg) {
 
 export const NOTE_CHIPS = ['First thing in the morning', 'After workout', 'After partying', 'Traveling', 'Cheat day'];
 
+// Declared tag rules ("when would you use this tag?") collected at tag
+// creation. They are cold-start priors only: a rule fires when the current
+// moment matches its window, and is silenced as soon as real logging
+// history exists near that hour (same gate as the built-in morning default).
+const RULE_HOURS = { morning: [4.5, 10], afternoon: [10, 17], evening: [17, 22], night: [22, 4.5] };
+
+export function ruleMatches(rule, hour, dow) {
+  if (rule.time) {
+    const win = RULE_HOURS[rule.time];
+    if (!win) return false;
+    const [a, b] = win;
+    const inWin = a < b ? hour >= a && hour < b : hour >= a || hour < b;
+    if (!inWin) return false;
+  }
+  if (rule.days === 'weekday' && (dow === 0 || dow === 6)) return false;
+  if (rule.days === 'weekend' && dow >= 1 && dow <= 5) return false;
+  return true;
+}
+
 /* Estimate tags for a new weigh-in — fully local, no network.
    Past weigh-ins vote for the tags they carry, weighted by recency
    (~3-week half-life) and by how close their time of day is to now
@@ -147,7 +166,7 @@ export const NOTE_CHIPS = ['First thing in the morning', 'After workout', 'After
    trains a new pattern and consistently untagged logging unlearns one.
    A fixed early-morning default covers the cold start until there is
    enough history near that hour. Returns at most the two strongest. */
-export function suggestTags(entries, now = new Date()) {
+export function suggestTags(entries, now = new Date(), rules = {}) {
   const hour = now.getHours() + now.getMinutes() / 60;
   const dow = now.getDay();
   const todayN = dayNum(formatDateLocal(now));
@@ -187,6 +206,22 @@ export function suggestTags(entries, now = new Date()) {
     if (dowW >= 2 && gRate < 0.5 && dw / dowW > 0.6 && dw / dowW > 2 * gRate) add(tag, dw);
   }
   if (nearW < 1.5 && hour >= 4.5 && hour < 10) add('First thing in the morning', 1);
+  // declared rules are gated only by history logged AFTER the tag was
+  // created; entries from before it existed cannot argue against it
+  for (const [tag, rule] of Object.entries(rules)) {
+    if (!rule || !ruleMatches(rule, hour, dow)) continue;
+    let sinceW = 0;
+    for (const e of entries) {
+      if (!e.time) continue;
+      if (rule.since && e.date < rule.since) continue;
+      const [h, m] = e.time.split(':').map(Number);
+      let d = Math.abs(h + m / 60 - hour);
+      d = Math.min(d, 24 - d);
+      if (d > 1.5) continue;
+      sinceW += recency(e) * kernel(d);
+    }
+    if (sinceW < 1.5) add(tag, 1);
+  }
 
   return [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([t]) => t);
 }
