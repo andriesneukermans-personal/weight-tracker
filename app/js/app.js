@@ -30,7 +30,7 @@ let syncState = { state: 'off', msg: '' };
 const savedUi = JSON.parse(localStorage.getItem(UI_KEY) || '{}');
 const state = {
   screen: 'home', scrub: null, draft: '', note: '', tags: [], suggested: [],
-  celeb: null, tagFilter: [],
+  celeb: null, tagFilter: [], logOpen: false, tagEdit: false, newTag: null,
   range: savedUi.range || '3M',
   cFrom: savedUi.cFrom || addDays(todayLocal(), -56),
   cTo: savedUi.cTo || todayLocal(),
@@ -57,6 +57,37 @@ function allTags() {
   const present = new Set();
   alive.forEach((e) => (e.tags || []).forEach((t) => present.add(t)));
   return NOTE_CHIPS.filter((t) => present.has(t)).concat([...present].filter((t) => !NOTE_CHIPS.includes(t)));
+}
+
+/* The pickable tag palette: defaults, device-local custom tags, and any tag
+   ever used in the (synced) entries, minus locally removed ones. Removing a
+   tag hides it from pickers but never rewrites history. */
+function tagPalette() {
+  const custom = config.customTags || [];
+  const hidden = new Set(config.hiddenTags || []);
+  const used = new Set();
+  alive.forEach((e) => (e.tags || []).forEach((t) => used.add(t)));
+  const rest = [...used].filter((t) => !NOTE_CHIPS.includes(t) && !custom.includes(t));
+  return [...new Set([...NOTE_CHIPS, ...custom, ...rest])].filter((t) => !hidden.has(t));
+}
+
+function commitNewTag() {
+  if (state.newTag == null) return;
+  const name = state.newTag.trim();
+  if (!name) { set({ newTag: null }); return; }
+  config.customTags = config.customTags || [];
+  config.hiddenTags = (config.hiddenTags || []).filter((t) => t !== name);
+  if (!tagPalette().includes(name) && !config.customTags.includes(name)) config.customTags.push(name);
+  saveConfig();
+  set({ newTag: null, tags: state.tags.includes(name) ? state.tags : state.tags.concat(name), suggested: [] });
+}
+
+function removeTag(label) {
+  config.customTags = (config.customTags || []).filter((t) => t !== label);
+  config.hiddenTags = config.hiddenTags || [];
+  if (!config.hiddenTags.includes(label)) config.hiddenTags.push(label);
+  saveConfig();
+  set({ tags: state.tags.filter((t) => t !== label), suggested: [] });
 }
 
 /* Derive everything the screens need. Handles 0 and 1 entries gracefully. */
@@ -301,10 +332,19 @@ function homeHtml(V) {
 }
 
 function logHtml(V) {
-  const chips = NOTE_CHIPS.map((label, i) => {
+  const palette = tagPalette();
+  const chips = palette.map((label, i) => {
+    if (state.tagEdit) {
+      return `<button data-action="tagrm:${i}" class="chip" style="background:#f5f0e0;color:#3a3a3a">${esc(label)} <span class="chip-rm">×</span></button>`;
+    }
     const on = state.tags.includes(label);
-    return `<button data-action="tag:${i}" class="chip" style="background:${on ? '#0a0a0a' : '#f5f0e0'};color:${on ? '#ffffff' : '#3a3a3a'}">${label}</button>`;
+    return `<button data-action="tag:${i}" class="chip" style="background:${on ? '#0a0a0a' : '#f5f0e0'};color:${on ? '#ffffff' : '#3a3a3a'}">${esc(label)}</button>`;
   }).join('');
+  const newChip = state.newTag != null
+    ? `<input id="newtag" class="chip chip-input" value="${esc(state.newTag)}" maxlength="30" placeholder="tag name">`
+    : `<button data-action="tagnew" class="chip chip-add">+ New</button>`;
+  const dateLabel = state.logDate === todayLocal() ? 'Today' : shortDate(state.logDate);
+  const tagSummary = state.tags.length ? state.tags.join(', ') : 'no tags';
   const pad = PAD_KEYS.map((k) => `<button data-action="pad:${k}" class="pad">${k}</button>`).join('');
   return `<div class="col screen screen-log">
     <div class="row between log-header">
@@ -321,15 +361,25 @@ function logHtml(V) {
       </div>
       <span class="draft-delta" style="color:${V.draftDeltaColor}">${V.draftDelta}</span>
     </div>
-    <div class="row between log-date" style="gap:8px">
-      <span class="kicker-sm" style="align-self:center">DATE</span>
-      <input type="date" id="logdate" value="${state.logDate}" max="${todayLocal()}">
-    </div>
-    <div class="col log-tags" style="gap:8px">
-      <span class="kicker-sm">TAGS</span>
-      <div class="chips">${chips}</div>
-      ${state.suggested.length ? '<span class="suggest-hint">✦ Suggested from your usual pattern, tap to adjust</span>' : ''}
-      <input id="note" value="${esc(state.note)}" maxlength="120" placeholder="Add a note (optional)">
+    <input id="note" class="log-note" value="${esc(state.note)}" maxlength="120" placeholder="Add a note (optional)">
+    <div class="col log-fold${state.logOpen ? ' fold-open' : ''}">
+      <button class="fold-row" data-action="fold">
+        <span class="fold-sum">${esc(dateLabel)} · ${esc(tagSummary)}${state.suggested.length ? ' ✦' : ''}</span>
+        <span class="fold-chev">▾</span>
+      </button>
+      ${state.logOpen ? `
+      <div class="fold-body">
+        <div class="row between" style="gap:8px">
+          <span class="kicker-sm" style="align-self:center">DATE</span>
+          <input type="date" id="logdate" value="${state.logDate}" max="${todayLocal()}">
+        </div>
+        <div class="row between">
+          <span class="kicker-sm">TAGS</span>
+          <button class="tag-edit-btn" data-action="tagedit">${state.tagEdit ? 'Done' : 'Edit'}</button>
+        </div>
+        <div class="chips">${chips}${newChip}</div>
+        ${state.suggested.length ? '<span class="suggest-hint">✦ Suggested from your usual pattern, tap to adjust</span>' : ''}
+      </div>` : ''}
     </div>
     <div class="pad-grid">${pad}</div>
     <button class="save-btn" data-action="save" style="background:${V.saveBg}">Save weigh-in</button>
@@ -483,7 +533,14 @@ function bind(V) {
   const note = $('#note');
   if (note) note.addEventListener('input', (e) => { state.note = e.target.value; });
   const logdate = $('#logdate');
-  if (logdate) logdate.addEventListener('change', (e) => { state.logDate = e.target.value || todayLocal(); });
+  if (logdate) logdate.addEventListener('change', (e) => { set({ logDate: e.target.value || todayLocal() }); });
+  const newtag = $('#newtag');
+  if (newtag) {
+    newtag.focus();
+    newtag.addEventListener('input', (e) => { state.newTag = e.target.value; });
+    newtag.addEventListener('keydown', (e) => { if (e.key === 'Enter') commitNewTag(); });
+    newtag.addEventListener('blur', () => commitNewTag());
+  }
   const cf = $('#cfrom'), ct = $('#cto');
   if (cf) cf.addEventListener('change', (e) => set({ cFrom: e.target.value, scrub: null }));
   if (ct) ct.addEventListener('change', (e) => set({ cTo: e.target.value, scrub: null }));
@@ -636,8 +693,11 @@ document.addEventListener('click', (e) => {
       const patch = { screen: arg, scrub: null };
       if (arg === 'log') {
         patch.logDate = todayLocal();
+        patch.logOpen = false;
+        patch.tagEdit = false;
+        patch.newTag = null;
         if (!state.draft && !state.tags.length) {
-          const sug = suggestTags(alive, new Date());
+          const sug = suggestTags(alive, new Date()).filter((t) => tagPalette().includes(t));
           if (sug.length) { patch.tags = sug; patch.suggested = sug; }
         }
       }
@@ -648,10 +708,19 @@ document.addEventListener('click', (e) => {
     case 'unit': config.unit = arg; saveConfig(); set({ draft: '' }); break;
     case 'pad': padTap(arg); break;
     case 'tag': {
-      const label = NOTE_CHIPS[+arg];
+      const label = tagPalette()[+arg];
+      if (!label) break;
       set({ tags: state.tags.includes(label) ? state.tags.filter((x) => x !== label) : state.tags.concat(label), suggested: [] });
       break;
     }
+    case 'tagrm': {
+      const label = tagPalette()[+arg];
+      if (label) removeTag(label);
+      break;
+    }
+    case 'tagnew': set({ newTag: '' }); break;
+    case 'tagedit': set({ tagEdit: !state.tagEdit, newTag: null }); break;
+    case 'fold': set({ logOpen: !state.logOpen, tagEdit: false, newTag: null }); break;
     case 'tfilter': {
       const label = allTags()[+arg];
       if (!label) break;
