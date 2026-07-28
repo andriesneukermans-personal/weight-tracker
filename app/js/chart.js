@@ -22,8 +22,9 @@ export function computeChart({ entries, goalKg = null, unit = 'kg', rangeKey = '
     vis = base.filter((e) => e.date >= from);
   }
   if (vis.length < 2) vis = base.slice(-7);
-  const i0 = base.indexOf(vis[0]);
-  const visTrend = trendAll.slice(i0, i0 + vis.length).map((t) => t.avgKg);
+  // trend is one value per day; each point picks up its day's value
+  const trendByDate = new Map(trendAll.map((t) => [t.date, t.avgKg]));
+  const visTrend = vis.map((e) => trendByDate.get(e.date));
 
   // x = day number + time-of-day fraction, so zoomed views place points
   // at their actual time

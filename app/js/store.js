@@ -1,11 +1,26 @@
-// IndexedDB wrapper. Object store 'entries' is keyed by date, so one
-// entry per calendar date is enforced by the storage layer itself.
+// IndexedDB wrapper. Object store 'entries' is keyed by id
+// (`date#time`, or the bare date for untimed entries), so several
+// weigh-ins per day can coexist while a given moment stays unique.
 
 export function openDB(name = 'weight-tracker') {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(name, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore('entries', { keyPath: 'date' });
+    const req = indexedDB.open(name, 2);
+    req.onupgradeneeded = (ev) => {
+      const db = req.result;
+      if (ev.oldVersion < 1) {
+        db.createObjectStore('entries', { keyPath: 'id' });
+        return;
+      }
+      // v1 (keyed by date) → v2 (keyed by id): re-key existing rows
+      const getReq = req.transaction.objectStore('entries').getAll();
+      getReq.onsuccess = () => {
+        const rows = getReq.result;
+        db.deleteObjectStore('entries');
+        const os = db.createObjectStore('entries', { keyPath: 'id' });
+        for (const e of rows) {
+          os.put({ ...e, id: e.time ? `${e.date}#${e.time}` : e.date });
+        }
+      };
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

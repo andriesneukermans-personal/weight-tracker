@@ -54,6 +54,20 @@ test('time labels appear only when the visible span is short', () => {
   assert.equal(wide.timeLabels.length, 0);
 });
 
+test('several weigh-ins on one day chart as distinct points, ordered by time', () => {
+  const day = [
+    E('2026-07-25', 82.9, '07:00'),
+    E('2026-07-26', 82.2, '07:05'),
+    E('2026-07-26', 83.0, '20:00'),
+  ];
+  const c = computeChart({ entries: day, rangeKey: '1W' });
+  assert.equal(c.pts.length, 3);
+  const [, morning, evening] = c.pts;
+  assert.ok(morning.x < evening.x);
+  // both same-day points share the day's trend value
+  assert.equal(morning.ty, evening.ty);
+});
+
 test('entries without a time still chart (no label, day-start position)', () => {
   const week = [E('2026-07-24', 82.9), E('2026-07-26', 82.5, '06:55')];
   const c = computeChart({ entries: week, rangeKey: '1W' });

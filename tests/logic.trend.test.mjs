@@ -15,6 +15,18 @@ test('moving average windows over calendar days, not array offsets', () => {
   assert.equal(trend[3].avgKg, 90);
 });
 
+test('days with several weigh-ins contribute their mean, once', () => {
+  const entries = [
+    E('2026-01-01', 80),
+    { date: '2026-01-02', time: '07:00', weightKg: 80, updatedAt: 'x' },
+    { date: '2026-01-02', time: '19:00', weightKg: 84, updatedAt: 'y' },
+  ];
+  const trend = movingAverage(entries);
+  // one trend point per day; Jan 2 contributes (80+84)/2 = 82, not two values
+  assert.deepEqual(trend.map((t) => t.date), ['2026-01-01', '2026-01-02']);
+  assert.equal(trend[1].avgKg, 81); // (80 + 82) / 2
+});
+
 test('computeStats: trend, 30-day change, distance to goal', () => {
   const entries = [E('2026-01-01', 90), E('2026-02-15', 85)];
   const s = computeStats(entries, 80);

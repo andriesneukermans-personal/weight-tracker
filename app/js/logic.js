@@ -42,8 +42,15 @@ export function timeFrac(timeStr) {
   return (h * 60 + m) / 1440;
 }
 
+// One weigh-in per (date, time); untimed entries (legacy or backdated)
+// use the bare date as id, so old data keeps its identity.
+export function entryId(e) {
+  return e.id || (e.time ? `${e.date}#${e.time}` : e.date);
+}
+
 export function sortByDate(entries) {
-  return [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const key = (e) => e.date + '#' + (e.time || '');
+  return [...entries].sort((a, b) => (key(a) < key(b) ? -1 : 1));
 }
 
 export const KG_PER_LB = 0.45359237;
@@ -73,6 +80,7 @@ export function entriesEqual(a, b) {
   const sa = sortByDate(a);
   const sb = sortByDate(b);
   return sa.every((e, i) =>
+    entryId(e) === entryId(sb[i]) &&
     e.date === sb[i].date &&
     e.weightKg === sb[i].weightKg &&
     (e.note || '') === (sb[i].note || '') &&
@@ -83,23 +91,37 @@ export function entriesEqual(a, b) {
 }
 
 export function mergeEntries(local, remote) {
-  const byDate = new Map();
-  for (const e of remote) byDate.set(e.date, e);
+  const norm = (e) => (e.id ? e : { ...e, id: entryId(e) });
+  const byId = new Map();
+  for (const e of remote) { const n = norm(e); byId.set(n.id, n); }
   for (const e of local) {
-    const r = byDate.get(e.date);
-    if (!r || e.updatedAt > r.updatedAt) byDate.set(e.date, e);
+    const n = norm(e);
+    const r = byId.get(n.id);
+    if (!r || n.updatedAt > r.updatedAt) byId.set(n.id, n);
   }
-  const merged = sortByDate([...byDate.values()]);
+  const merged = sortByDate([...byId.values()]);
   return { merged, pushNeeded: !entriesEqual(merged, remote) };
 }
 
+// One trend point per day. Days with several weigh-ins contribute their
+// mean, so a heavy-logging day counts the same as a single measurement.
+export function dayMeans(entries) {
+  const byDay = new Map();
+  for (const e of sortByDate(entries)) {
+    if (!byDay.has(e.date)) byDay.set(e.date, []);
+    byDay.get(e.date).push(e.weightKg);
+  }
+  const mean = (arr) => arr.reduce((s, x) => s + x, 0) / arr.length;
+  return [...byDay.entries()].map(([date, ws]) => ({ date, meanKg: mean(ws) }));
+}
+
 export function movingAverage(entries, windowDays = 7) {
-  const sorted = sortByDate(entries);
-  return sorted.map((e) => {
-    const from = addDays(e.date, -(windowDays - 1));
-    const inWindow = sorted.filter((x) => x.date >= from && x.date <= e.date);
-    const avg = inWindow.reduce((s, x) => s + x.weightKg, 0) / inWindow.length;
-    return { date: e.date, avgKg: Math.round(avg * 100) / 100 };
+  const days = dayMeans(entries);
+  return days.map((d, i) => {
+    const from = addDays(d.date, -(windowDays - 1));
+    const win = days.filter((x) => x.date >= from && x.date <= d.date);
+    const avg = win.reduce((s, x) => s + x.meanKg, 0) / win.length;
+    return { date: d.date, avgKg: Math.round(avg * 100) / 100 };
   });
 }
 
@@ -108,7 +130,7 @@ export function movingAverage(entries, windowDays = 7) {
 export function streakOf(entries, todayIso) {
   const sorted = sortByDate(entries);
   if (sorted.length === 0) return 0;
-  const nums = sorted.map((e) => dayNum(e.date));
+  const nums = [...new Set(sorted.map((e) => dayNum(e.date)))];
   if (nums[nums.length - 1] < dayNum(todayIso) - 1) return 0;
   let streak = 1;
   for (let i = nums.length - 2; i >= 0; i--) {

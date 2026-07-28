@@ -138,6 +138,7 @@ input{font-family:inherit}
 .wk-day span{font-size:11px;color:#9a9a9a}
 .wk-main{flex:1;display:flex;flex-direction:column;gap:1px}
 .wk-w{font:600 15px Inter}
+.wk-time{font:500 11px Inter;color:#9a9a9a}
 .wk-note{font-size:12px;color:#b8865a;font-style:italic}
 .wk-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
 .wk-tag{font:500 10.5px Inter;background:#f5f0e0;color:#3a3a3a;border-radius:9999px;padding:3px 9px}

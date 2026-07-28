@@ -46,7 +46,8 @@ test('pushes local-only entries using the pulled sha', async () => {
   assert.equal(await runSync(h.deps), true);
   assert.equal(h.calls.pushed.length, 1);
   assert.equal(h.calls.pushed[0].sha, 's1');
-  assert.deepEqual(h.calls.saved.at(-1), [e]);
+  // the merge normalizes entries with their derived id before saving/pushing
+  assert.deepEqual(h.calls.saved.at(-1), [{ ...e, id: e.date }]);
 });
 
 test('conflict triggers exactly one re-pull, re-merge, retry', async () => {

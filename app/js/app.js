@@ -4,8 +4,8 @@
 
 import {
   todayLocal, addDays, sortByDate, parseWeightToKg, kgToLbs, mergeEntries,
-  movingAverage, streakOf, forecast, suggestTags, NOTE_CHIPS,
-  shortDate, parseDateLocal, dayNum, hhmm,
+  movingAverage, dayMeans, streakOf, forecast, suggestTags, NOTE_CHIPS,
+  shortDate, parseDateLocal, dayNum, hhmm, entryId,
 } from './logic.js';
 import { computeChart, chartSVG, RANGE_KEYS } from './chart.js';
 import { openDB, getAllEntries, putEntry, mergeReplaceEntries } from './store.js';
@@ -143,7 +143,7 @@ function compute() {
   }[f.kind];
 
   const streak = streakOf(es, todayIso);
-  const logged30 = es.filter((e) => dayNum(e.date) > todayN - 30).length;
+  const logged30 = new Set(es.filter((e) => dayNum(e.date) > todayN - 30).map((e) => e.date)).size;
   const minW = es.length ? Math.min(...es.map((e) => e.weightKg)) : null;
   const startW = first ? first.weightKg : null;
   const doneK = startW != null ? Math.max(0, Math.floor(startW - minW)) : 0;
@@ -176,7 +176,15 @@ function compute() {
     draftDeltaColor = '#ef4444';
   }
 
-  // history grouped by week (0 = this week)
+  // history grouped by week (0 = this week); one row per weigh-in,
+  // deltas compare against the previous day's mean
+  const means = dayMeans(es);
+  const meanDates = means.map((m) => m.date);
+  const meanByDate = new Map(means.map((m) => [m.date, m.meanKg]));
+  const prevDayMean = (date) => {
+    const i = meanDates.indexOf(date);
+    return i > 0 ? meanByDate.get(meanDates[i - 1]) : null;
+  };
   const byWeek = {};
   [...es].reverse().forEach((e) => {
     const wk = Math.floor((todayN - dayNum(e.date)) / 7);
@@ -184,21 +192,23 @@ function compute() {
   });
   const historyWeeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b).slice(0, 12).map((wk) => {
     const rows = byWeek[wk];
-    const avg = rows.reduce((s, e) => s + e.weightKg, 0) / rows.length;
+    const wkDates = [...new Set(rows.map((e) => e.date))];
+    const avg = wkDates.reduce((s, d) => s + meanByDate.get(d), 0) / wkDates.length;
     const label = wk === 0 ? 'THIS WEEK'
       : wk === 1 ? 'LAST WEEK'
       : (shortDate(rows[rows.length - 1].date) + ' – ' + shortDate(rows[0].date)).toUpperCase();
     return {
       label, avg: fmt(avg),
       rows: rows.map((e) => {
-        const pi = es.indexOf(e) - 1;
-        const d = pi >= 0 ? disp(e.weightKg - es[pi].weightKg) : 0;
+        const prev = prevDayMean(e.date);
+        const d = prev != null ? disp(e.weightKg - prev) : null;
         const date = parseDateLocal(e.date);
         return {
-          iso: e.date,
-          day: DOW[date.getDay()], date: shortDate(e.date), w: fmt(e.weightKg),
-          delta: (d <= 0 ? '−' : '+') + Math.abs(d).toFixed(1),
-          dcol: d <= 0 ? '#1a8a4a' : '#ef4444',
+          id: e.id || entryId(e),
+          day: DOW[date.getDay()], date: shortDate(e.date), time: e.time || '',
+          w: fmt(e.weightKg),
+          delta: d == null ? '·' : (d <= 0 ? '−' : '+') + Math.abs(d).toFixed(1),
+          dcol: d == null ? '#9a9a9a' : d <= 0 ? '#1a8a4a' : '#ef4444',
           note: e.note || '', tags: e.tags || [],
         };
       }),
@@ -451,10 +461,10 @@ function historyHtml(V) {
       </div>
       <div class="card wk-card">
         ${wk.rows.map((row) => `
-        <div class="wk-row" data-action="edit:${row.iso}">
+        <div class="wk-row" data-action="edit:${esc(row.id)}">
           <div class="wk-day"><b>${row.day}</b><span>${row.date}</span></div>
           <div class="wk-main">
-            <span class="wk-w">${row.w} ${unit()}</span>
+            <span class="wk-w">${row.w} ${unit()}${row.time ? ` <span class="wk-time">· ${row.time}</span>` : ''}</span>
             ${row.note ? `<span class="wk-note">${esc(row.note)}</span>` : ''}
             ${row.tags.length ? `<div class="wk-tags">${row.tags.map((tg) => `<span class="wk-tag">${esc(tg)}</span>`).join('')}</div>` : ''}
           </div>
@@ -661,16 +671,17 @@ async function save() {
     }
   }
   const now = new Date().toISOString();
-  // moving an edited entry to another date tombstones the original
-  if (editing && editing !== date) {
-    await putEntry(db, { date: editing, deleted: true, updatedAt: now });
-  }
-  const original = editing ? alive.find((e) => e.date === editing) : null;
+  const original = editing ? alive.find((e) => (e.id || entryId(e)) === editing) : null;
   const time = editing
     ? (original && original.time ? original.time : null)
     : (isToday ? hhmm() : null);
+  const id = time ? `${date}#${time}` : date;
+  // an edit that changes the entry's identity (date change) tombstones the original
+  if (editing && original && id !== editing) {
+    await putEntry(db, { id: editing, date: original.date, deleted: true, updatedAt: now });
+  }
   await putEntry(db, {
-    date, weightKg: kg,
+    id, date, weightKg: kg,
     note: state.note.trim() || '',
     tags: state.tags,
     ...(time ? { time } : {}),
@@ -686,7 +697,13 @@ async function save() {
 
 async function deleteEntry() {
   if (!state.editing) return;
-  await putEntry(db, { date: state.editing, deleted: true, updatedAt: new Date().toISOString() });
+  const original = alive.find((e) => (e.id || entryId(e)) === state.editing);
+  await putEntry(db, {
+    id: state.editing,
+    date: original ? original.date : state.logDate,
+    deleted: true,
+    updatedAt: new Date().toISOString(),
+  });
   Object.assign(state, {
     draft: '', note: '', tags: [], suggested: [], editing: null, confirmDelete: false,
     screen: 'history', scrub: null, logDate: todayLocal(),
@@ -805,10 +822,10 @@ document.addEventListener('click', (e) => {
     case 'ruledone': finalizeNewTag(true); break;
     case 'ruleskip': finalizeNewTag(false); break;
     case 'edit': {
-      const e = alive.find((x) => x.date === arg);
+      const e = alive.find((x) => (x.id || entryId(x)) === arg);
       if (!e) break;
       set({
-        screen: 'log', editing: e.date, logDate: e.date,
+        screen: 'log', editing: e.id || entryId(e), logDate: e.date,
         draft: disp(e.weightKg).toFixed(1), note: e.note || '', tags: [...(e.tags || [])],
         suggested: [], logOpen: false, tagEdit: false, newTag: null, pendingTag: null,
         confirmDelete: false, scrub: null,
