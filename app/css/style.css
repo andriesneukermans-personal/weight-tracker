@@ -13,10 +13,10 @@ button{font-family:inherit;border:none;background:none;padding:0;cursor:pointer;
 input{font-family:inherit}
 
 #app{position:relative;width:100%;max-width:430px;height:100dvh;background:#fffaf0;overflow:hidden}
-@media (min-width:431px){
+@media (min-width:431px) and (min-height:640px){
   #app{margin:24px 0;height:calc(100dvh - 48px);max-height:880px;border-radius:32px;box-shadow:0 24px 60px rgba(26,26,20,.18)}
 }
-#scroll{height:100%;overflow-y:auto;padding:calc(24px + env(safe-area-inset-top)) 20px 130px}
+#scroll{height:100%;overflow-y:auto;padding:calc(24px + env(safe-area-inset-top)) 20px 130px;padding-top:calc(clamp(10px,2.8dvh,24px) + env(safe-area-inset-top));padding-bottom:clamp(84px,12.5dvh,130px)}
 
 /* layout utilities */
 .col{display:flex;flex-direction:column}
@@ -24,14 +24,21 @@ input{font-family:inherit}
 .between{justify-content:space-between}
 .baseline{align-items:baseline}
 
+/* screens; gaps scale with viewport height (design baseline 844px tall) */
+.screen{padding-top:4px}
+.screen-home{gap:14px;gap:clamp(6px,1.3dvh,14px)}
+.screen-log{gap:16px;gap:clamp(7px,1.4dvh,16px)}
+.screen-history{gap:18px}
+.screen-goal{gap:16px;gap:clamp(10px,1.9dvh,16px)}
+
 /* type */
-.h1{font-size:24px;font-weight:600;letter-spacing:-.5px}
+.h1{font-size:24px;font-size:clamp(19px,2.6dvh,24px);font-weight:600;letter-spacing:-.5px}
 .sub13{font-size:13px;color:#6a6a6a}
 .kicker{font:600 12px Inter;letter-spacing:1.5px;color:#9a9a9a}
 .kicker-sm{font:600 11px Inter;letter-spacing:1.2px;color:#9a9a9a}
 
 /* header */
-.avatar{width:40px;height:40px;border-radius:50%;background:#a4d4c5;display:flex;align-items:center;justify-content:center;font-weight:600;color:#0a1a1a}
+.avatar{width:40px;height:40px;width:clamp(32px,4.8dvh,40px);height:clamp(32px,4.8dvh,40px);border-radius:50%;background:#a4d4c5;display:flex;align-items:center;justify-content:center;font-weight:600;color:#0a1a1a}
 #sync-chip{font:600 11px Inter;letter-spacing:.3px}
 #sync-chip[data-state="synced"]{color:#1a8a4a}
 #sync-chip[data-state="syncing"]{color:#b8865a}
@@ -39,27 +46,27 @@ input{font-family:inherit}
 #sync-chip[data-state="off"]{color:#9a9a9a}
 
 /* reminder */
-.reminder{background:#ffb084;border-radius:24px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.reminder{background:#ffb084;border-radius:24px;padding:18px 20px;padding-top:clamp(10px,1.8dvh,18px);padding-bottom:clamp(10px,1.8dvh,18px);display:flex;align-items:center;justify-content:space-between;gap:12px}
 .reminder-title{font-size:16px;font-weight:600;letter-spacing:-.2px}
 .reminder-sub{font-size:13px;color:#3a3a3a}
-.reminder-btn{background:#fffaf0;border-radius:12px;padding:12px 18px;font:600 14px Inter;flex:none}
+.reminder-btn{background:#fffaf0;border-radius:12px;padding:clamp(9px,1.5dvh,12px) 18px;font:600 14px Inter;flex:none}
 
 /* big numbers */
-.bignum{font-size:54px;font-weight:500;letter-spacing:-2px;line-height:1}
+.bignum{font-size:54px;font-size:clamp(34px,5.6dvh,54px);font-weight:500;letter-spacing:-2px;line-height:1}
 .bignum-unit{font-size:18px;font-weight:500;color:#6a6a6a}
 
 /* chart card */
 .card{background:#fffefa;border:1px solid #e5e5e5;border-radius:16px}
-.chart-card{padding:14px 12px 10px;display:flex;flex-direction:column;gap:10px}
+.chart-card{padding:clamp(10px,1.7dvh,14px) 12px clamp(8px,1.2dvh,10px);display:flex;flex-direction:column;gap:10px;gap:clamp(7px,1.2dvh,10px)}
 .pills{display:flex;gap:6px;overflow-x:auto;padding:0 4px;scrollbar-width:none}
 .pills::-webkit-scrollbar{display:none}
-.pill{flex:none;border-radius:9999px;padding:7px 12px;font:600 12px Inter}
+.pill{flex:none;border-radius:9999px;padding:clamp(5px,.85dvh,7px) 12px;font:600 12px Inter}
 .pill-sm{font:500 11px Inter;padding:6px 10px}
 .chart-empty{aspect-ratio:330/190;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 24px;font:500 13px Inter;color:#9a9a9a}
 .custom-dates{display:flex;gap:8px;align-items:center;padding:0 4px}
 .custom-dates input{flex:1;min-width:0;border:1px solid #e5e5e5;border-radius:12px;padding:8px 10px;font:500 12px Inter;background:#fffaf0;color:#0a0a0a}
 .custom-dates span{font-size:12px;color:#9a9a9a}
-.chart-meta{display:flex;justify-content:space-between;align-items:center;padding:0 6px;min-height:18px}
+.chart-meta{display:flex;justify-content:space-between;align-items:center;padding:0 6px;min-height:clamp(14px,2.1dvh,18px)}
 #readout{font:600 13px Inter;color:#0a0a0a}
 #readout .ro-date{font-weight:400;color:#6a6a6a}
 #readout .ro-note{color:#b8865a}
@@ -68,7 +75,7 @@ input{font-family:inherit}
 .legend-dot{width:8px;height:8px;border-radius:50%;background:#c9c2ae}
 .legend-trend{width:14px;height:3px;border-radius:2px}
 .legend-goal{width:14px;height:0;border-top:2px dashed #1a3a3a}
-#chart{display:block;width:100%;touch-action:none}
+#chart{display:block;width:100%;height:auto;max-height:clamp(126px,21dvh,190px);touch-action:none}
 #chart text{font-family:Inter,sans-serif}
 #chart .tick{font-size:9.5px;fill:#9a9a9a}
 #chart .goal-lbl{font-size:9px;font-weight:700;fill:#1a3a3a;letter-spacing:1px}
@@ -76,13 +83,13 @@ input{font-family:inherit}
 
 /* stat cards */
 .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.stat{border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:4px}
-.stat-num{font-size:34px;font-weight:500;letter-spacing:-1px;line-height:1}
+.stat{border-radius:24px;padding:18px;padding-top:clamp(10px,1.8dvh,18px);padding-bottom:clamp(10px,1.8dvh,18px);display:flex;flex-direction:column;gap:4px}
+.stat-num{font-size:34px;font-size:clamp(24px,3.6dvh,34px);font-weight:500;letter-spacing:-1px;line-height:1}
 .stat-label{font:600 13px Inter}
 .stat-sub{font-size:11.5px;color:#3a3a3a}
 
 /* forecast banner */
-.banner{background:#1a3a3a;border-radius:16px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left}
+.banner{background:#1a3a3a;border-radius:16px;padding:16px 20px;padding-top:clamp(10px,1.6dvh,16px);padding-bottom:clamp(10px,1.6dvh,16px);display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left}
 .banner-text{font:500 14px/1.45 Inter;color:#fff}
 .banner-arrow{color:#a4d4c5;font-size:18px;flex:none;margin-left:10px}
 
@@ -91,19 +98,19 @@ input{font-family:inherit}
 .seg-btn{border-radius:9999px;padding:7px 14px;font:600 13px Inter}
 
 /* log screen */
-.draft-card{background:#f5f0e0;border-radius:24px;padding:22px 20px;display:flex;flex-direction:column;align-items:center;gap:4px}
-.draft-num{font-size:58px;font-weight:500;letter-spacing:-2px;line-height:1;min-height:58px}
+.draft-card{background:#f5f0e0;border-radius:24px;padding:22px 20px;padding-top:clamp(10px,2dvh,22px);padding-bottom:clamp(10px,2dvh,22px);display:flex;flex-direction:column;align-items:center;gap:4px}
+.draft-num{font-size:58px;font-size:clamp(36px,5.8dvh,58px);font-weight:500;letter-spacing:-2px;line-height:1;min-height:58px;min-height:clamp(36px,5.8dvh,58px)}
 .draft-unit{font-size:20px;font-weight:500;color:#6a6a6a}
 .draft-delta{font:500 13px Inter}
-#logdate{border:1px solid #e5e5e5;border-radius:12px;padding:8px 10px;font:500 12px Inter;background:#fffaf0;color:#0a0a0a}
+#logdate{border:1px solid #e5e5e5;border-radius:12px;padding:clamp(6px,1dvh,8px) 10px;font:500 12px Inter;background:#fffaf0;color:#0a0a0a}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
-.chip{border-radius:9999px;padding:7px 12px;font:500 12px Inter}
+.chip{border-radius:9999px;padding:clamp(5px,.85dvh,7px) 12px;font:500 12px Inter}
 .suggest-hint{font-size:11.5px;color:#b8865a}
-#note{border:1px solid #e5e5e5;border-radius:12px;padding:12px 16px;font:400 14px Inter;background:#fffaf0;color:#0a0a0a;outline:none;width:100%}
-.pad-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-.pad{height:58px;border-radius:16px;background:#f5f0e0;font:600 22px Inter;transition:transform .08s}
+#note{border:1px solid #e5e5e5;border-radius:12px;padding:clamp(8px,1.4dvh,12px) 16px;font:400 14px Inter;background:#fffaf0;color:#0a0a0a;outline:none;width:100%}
+.pad-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;gap:clamp(6px,1.2dvh,10px)}
+.pad{height:58px;height:clamp(40px,6.2dvh,58px);border-radius:16px;background:#f5f0e0;font:600 22px Inter;transition:transform .08s}
 .pad:active{transform:scale(.94)}
-.save-btn{height:52px;border-radius:12px;color:#fff;font:600 15px Inter;letter-spacing:.2px;width:100%}
+.save-btn{height:52px;height:clamp(42px,5.8dvh,52px);border-radius:12px;color:#fff;font:600 15px Inter;letter-spacing:.2px;width:100%}
 
 /* history */
 .wk-badge{font:600 12px Inter;color:#0a1a1a;background:#a4d4c5;border-radius:9999px;padding:4px 10px}
@@ -121,27 +128,27 @@ input{font-family:inherit}
 .wk-delta{font:600 13px Inter;flex:none}
 
 /* goal screen */
-.goal-card{border-radius:24px;padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.goal-card{border-radius:24px;padding:24px 20px;padding-top:clamp(14px,2.8dvh,24px);padding-bottom:clamp(14px,2.8dvh,24px);display:flex;flex-direction:column;align-items:center;gap:10px;gap:clamp(6px,1.2dvh,10px)}
 .goal-kicker{font:600 12px Inter;letter-spacing:1.5px;color:#fffaf0;opacity:.85}
 .goal-hint{font:500 12px Inter;color:#fffaf0;opacity:.85}
-.goal-step{width:44px;height:44px;border-radius:50%;background:rgba(255,250,240,.25);color:#fff;font-size:22px;font-weight:600}
-.goal-num{font-size:52px;font-weight:500;letter-spacing:-2px;color:#fff;line-height:1}
+.goal-step{width:44px;height:44px;width:clamp(36px,5.2dvh,44px);height:clamp(36px,5.2dvh,44px);border-radius:50%;background:rgba(255,250,240,.25);color:#fff;font-size:22px;font-weight:600}
+.goal-num{font-size:52px;font-size:clamp(38px,6.2dvh,52px);font-weight:500;letter-spacing:-2px;color:#fff;line-height:1}
 .goal-unit{font-size:18px;font-weight:500;color:#fffaf0;opacity:.85}
-.progress-card{padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.progress-card{padding:clamp(12px,2.1dvh,18px) 20px;display:flex;flex-direction:column;gap:10px}
 .progress-track{height:12px;border-radius:9999px;background:#f0ead9;overflow:hidden}
 .progress-fill{height:100%;border-radius:9999px;transition:width .4s}
 .progress-ends{display:flex;justify-content:space-between;font:500 12px Inter;color:#9a9a9a}
-.forecast-card{background:#1a3a3a;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:4px}
+.forecast-card{background:#1a3a3a;border-radius:16px;padding:clamp(12px,2.1dvh,18px) 20px;display:flex;flex-direction:column;gap:4px}
 .forecast-kicker{font:600 12px Inter;letter-spacing:1.5px;color:#a4d4c5}
 .forecast-text{font:500 15px/1.45 Inter;color:#fff}
 .forecast-sub{font-size:12px;color:#a4d4c5}
-.milestone{display:flex;align-items:center;gap:12px;padding:14px 16px}
+.milestone{display:flex;align-items:center;gap:12px;padding:clamp(10px,1.7dvh,14px) 16px}
 .milestone-badge{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:600 14px Inter;flex:none}
 .milestone-label{font:600 14px Inter}
 .milestone-sub{font-size:12px;color:#9a9a9a}
 
 /* tab bar */
-#tabbar{position:absolute;left:0;right:0;bottom:0;padding:8px 30px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(to top,#fffaf0 75%,rgba(255,250,240,0));display:flex;align-items:center;justify-content:space-between}
+#tabbar{position:absolute;left:0;right:0;bottom:0;padding:8px 30px calc(20px + env(safe-area-inset-bottom));padding-bottom:calc(clamp(10px,2.4dvh,20px) + env(safe-area-inset-bottom));background:linear-gradient(to top,#fffaf0 75%,rgba(255,250,240,0));display:flex;align-items:center;justify-content:space-between}
 .tab{display:flex;flex-direction:column;align-items:center;gap:5px;padding:6px 10px;min-width:44px}
 .tab-label{font:600 11px Inter}
 .tab-dot{width:11px;height:11px;border-radius:50%}
@@ -159,6 +166,45 @@ input{font-family:inherit}
 .celeb-title{font-size:26px;font-weight:500;letter-spacing:-.8px}
 .celeb-sub{font-size:14px;color:#6a6a6a;line-height:1.5}
 .celeb-btn{margin-top:8px;background:#0a0a0a;color:#fff;border-radius:12px;padding:13px 24px;font:600 14px Inter}
+
+/* short screens: tag chips become one scrollable row instead of wrapping */
+@media (max-height:760px){
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none}
+}
+
+/* short screens with the weigh-in reminder up: chart and spacing cede its height */
+@media (max-height:750px){
+  .screen-home:has(.reminder){gap:clamp(5px,1.1dvh,14px)}
+  .screen-home:has(.reminder) #chart{max-height:clamp(104px,17dvh,190px)}
+  .screen-home:has(.reminder) .reminder{padding-top:8px;padding-bottom:8px}
+  .screen-home:has(.reminder) .reminder-btn{padding:8px 14px}
+  .screen-home:has(.reminder) .stat{padding-top:9px;padding-bottom:9px}
+}
+
+/* landscape: wide and short viewports get two-column screens */
+@media (orientation:landscape) and (max-height:520px){
+  #app{max-width:820px}
+  .screen-home{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);column-gap:16px;align-content:start;
+    grid-template-areas:"header chart" "reminder chart" "current chart" "stats chart" "banner chart"}
+  .home-header{grid-area:header}
+  .screen-home .reminder{grid-area:reminder}
+  .home-current{grid-area:current}
+  .screen-home .chart-card{grid-area:chart}
+  .screen-home .stat-grid{grid-area:stats}
+  .screen-home .banner{grid-area:banner}
+  .screen-log{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px;align-content:start;
+    grid-template-rows:auto auto auto minmax(0,1fr) auto;
+    grid-template-areas:"lheader pad" "draft pad" "ldate pad" "ltags pad" "ltags save"}
+  .log-header{grid-area:lheader}
+  .screen-log .draft-card{grid-area:draft}
+  .log-date{grid-area:ldate}
+  .log-tags{grid-area:ltags}
+  .screen-log .pad-grid{grid-area:pad}
+  .screen-log .save-btn{grid-area:save}
+  .screen-history,.screen-goal{max-width:560px;width:100%;margin:0 auto}
+}
 
 /* settings dialog */
 #settings{border:none;border-radius:24px;padding:24px;max-width:min(420px,calc(100vw - 40px));background:#fffaf0;color:#0a0a0a;font-family:Inter,-apple-system,'Segoe UI',sans-serif}

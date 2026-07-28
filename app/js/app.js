@@ -254,8 +254,8 @@ function syncChip() {
 }
 
 function homeHtml(V) {
-  return `<div class="col" style="gap:14px;padding-top:4px">
-    <div class="row between">
+  return `<div class="col screen screen-home">
+    <div class="row between home-header">
       <div class="col" style="gap:2px">
         <span class="sub13">${V.todayLong} · ${syncChip()}</span>
         <span class="h1">${greeting()}, Andries</span>
@@ -270,7 +270,7 @@ function homeHtml(V) {
       </div>
       <button class="reminder-btn" data-action="nav:log">Log now</button>
     </div>` : ''}
-    <div class="row between" style="align-items:flex-end;padding:2px 4px">
+    <div class="row between home-current" style="align-items:flex-end;padding:2px 4px">
       <div class="col" style="gap:2px">
         <span class="kicker">CURRENT</span>
         <div class="row baseline" style="gap:6px">
@@ -306,8 +306,8 @@ function logHtml(V) {
     return `<button data-action="tag:${i}" class="chip" style="background:${on ? '#0a0a0a' : '#f5f0e0'};color:${on ? '#ffffff' : '#3a3a3a'}">${label}</button>`;
   }).join('');
   const pad = PAD_KEYS.map((k) => `<button data-action="pad:${k}" class="pad">${k}</button>`).join('');
-  return `<div class="col" style="gap:16px;padding-top:4px">
-    <div class="row between">
+  return `<div class="col screen screen-log">
+    <div class="row between log-header">
       <div class="col" style="gap:2px">
         <span class="h1">Log weigh-in</span>
         <span class="sub13">${V.todayLong}</span>
@@ -321,11 +321,11 @@ function logHtml(V) {
       </div>
       <span class="draft-delta" style="color:${V.draftDeltaColor}">${V.draftDelta}</span>
     </div>
-    <div class="row between" style="gap:8px">
+    <div class="row between log-date" style="gap:8px">
       <span class="kicker-sm" style="align-self:center">DATE</span>
       <input type="date" id="logdate" value="${state.logDate}" max="${todayLocal()}">
     </div>
-    <div class="col" style="gap:8px">
+    <div class="col log-tags" style="gap:8px">
       <span class="kicker-sm">TAGS</span>
       <div class="chips">${chips}</div>
       ${state.suggested.length ? '<span class="suggest-hint">✦ Suggested from your usual pattern, tap to adjust</span>' : ''}
@@ -338,7 +338,7 @@ function logHtml(V) {
 
 function historyHtml(V) {
   if (!V.entryCount) {
-    return `<div class="col" style="gap:18px;padding-top:4px">
+    return `<div class="col screen screen-history">
       <div class="col" style="gap:2px">
         <span class="h1">History</span>
         <span class="sub13">No weigh-ins yet</span>
@@ -365,7 +365,7 @@ function historyHtml(V) {
         </div>`).join('')}
       </div>
     </div>`).join('');
-  return `<div class="col" style="gap:18px;padding-top:4px">
+  return `<div class="col screen screen-history">
     <div class="col" style="gap:2px">
       <span class="h1">History</span>
       <span class="sub13">${V.entryCount} weigh-ins ${V.sinceLabel}</span>
@@ -383,7 +383,7 @@ function goalHtml(V) {
         <span class="milestone-sub">${m.sub}</span>
       </div>
     </div>`).join('');
-  return `<div class="col" style="gap:16px;padding-top:4px">
+  return `<div class="col screen screen-goal">
     <div class="row between">
       <span class="h1">Goal</span>
       ${unitToggle()}
