@@ -5,7 +5,7 @@
 import {
   todayLocal, addDays, sortByDate, parseWeightToKg, kgToLbs, mergeEntries,
   movingAverage, dayMeans, streakOf, forecast, suggestTags, NOTE_CHIPS,
-  shortDate, parseDateLocal, dayNum, hhmm, entryId,
+  shortDate, parseDateLocal, dayNum, hhmm, entryId, fmtWeight, kgLost,
 } from './logic.js';
 import { computeChart, chartSVG, RANGE_KEYS } from './chart.js';
 import { openDB, getAllEntries, putEntry, mergeReplaceEntries } from './store.js';
@@ -49,7 +49,7 @@ function set(patch) {
 
 function unit() { return config.unit === 'lbs' ? 'lbs' : 'kg'; }
 function disp(kg) { return unit() === 'lbs' ? kgToLbs(kg) : kg; }
-function fmt(kg) { return disp(kg).toFixed(1); }
+function fmt(kg) { return fmtWeight(disp(kg)); }
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
@@ -123,7 +123,7 @@ function compute() {
     const cutoff = addDays(last.date, -7);
     const past = [...trend].reverse().find((t) => t.date <= cutoff);
     const wd = disp(trLast - (past ? past.avgKg : trLast));
-    const rounded = Math.abs(wd).toFixed(1);
+    const rounded = fmtWeight(Math.abs(wd));
     if (rounded === '0.0') {
       weekDeltaText = '· flat this week';
     } else {
@@ -144,9 +144,10 @@ function compute() {
 
   const streak = streakOf(es, todayIso);
   const logged30 = new Set(es.filter((e) => dayNum(e.date) > todayN - 30).map((e) => e.date)).size;
-  const minW = es.length ? Math.min(...es.map((e) => e.weightKg)) : null;
   const startW = first ? first.weightKg : null;
-  const doneK = startW != null ? Math.max(0, Math.floor(startW - minW)) : 0;
+  // achievements follow the CURRENT weight: regain the kilos and the
+  // checkmarks (and the "kg down" stat) drop back until they are re-lost
+  const doneK = startW != null ? kgLost(startW, last.weightKg) : 0;
 
   // chart, optionally narrowed to the selected tag filters
   const chartBase = state.tagFilter.length
@@ -166,7 +167,7 @@ function compute() {
   let draftDelta = 'Enter the weight', draftDeltaColor = '#9a9a9a';
   if (valid && last) {
     const dd = disp(parsed.kg - last.weightKg);
-    draftDelta = (dd <= 0 ? '▼ ' : '▲ ') + Math.abs(dd).toFixed(1) + ' ' + unit() + ' vs last weigh-in';
+    draftDelta = (dd <= 0 ? '▼ ' : '▲ ') + fmtWeight(Math.abs(dd)) + ' ' + unit() + ' vs last weigh-in';
     draftDeltaColor = dd <= 0 ? '#1a8a4a' : '#ef4444';
   } else if (valid) {
     draftDelta = 'First weigh-in!';
@@ -207,7 +208,7 @@ function compute() {
           id: e.id || entryId(e),
           day: DOW[date.getDay()], date: shortDate(e.date), time: e.time || '',
           w: fmt(e.weightKg),
-          delta: d == null ? '·' : (d <= 0 ? '−' : '+') + Math.abs(d).toFixed(1),
+          delta: d == null ? '·' : (d <= 0 ? '−' : '+') + fmtWeight(Math.abs(d)),
           dcol: d == null ? '#9a9a9a' : d <= 0 ? '#1a8a4a' : '#ef4444',
           note: e.note || '', tags: e.tags || [],
         };
@@ -229,8 +230,8 @@ function compute() {
     milestones.push({
       label: 'Goal · ' + fmt(goal) + ' ' + unit(),
       sub: f.kind === 'onTrack' && f.date ? 'Forecast: ' + shortDate(f.date) : 'Keep logging to unlock a forecast',
-      op: '1', badgeBg: minW != null && minW <= goal ? '#a4d4c5' : ACCENT,
-      mark: minW != null && minW <= goal ? '✓' : '★', markC: '#ffffff',
+      op: '1', badgeBg: last && last.weightKg <= goal ? '#a4d4c5' : ACCENT,
+      mark: last && last.weightKg <= goal ? '✓' : '★', markC: '#ffffff',
     });
   }
 
@@ -648,7 +649,11 @@ function padTap(k) {
   const d = state.draft;
   if (k === '⌫') return set({ draft: d.slice(0, -1) });
   if (k === '.' && (d.includes('.') || !d)) return;
-  if (d.replace('.', '').length >= 4 && k !== '.') return;
+  if (k !== '.') {
+    if (d.replace('.', '').length >= 5) return;
+    const dot = d.indexOf('.');
+    if (dot !== -1 && d.length - dot - 1 >= 2) return;
+  }
   set({ draft: d + k });
 }
 
@@ -826,7 +831,7 @@ document.addEventListener('click', (e) => {
       if (!e) break;
       set({
         screen: 'log', editing: e.id || entryId(e), logDate: e.date,
-        draft: disp(e.weightKg).toFixed(1), note: e.note || '', tags: [...(e.tags || [])],
+        draft: String(Math.round(disp(e.weightKg) * 100) / 100), note: e.note || '', tags: [...(e.tags || [])],
         suggested: [], logOpen: false, tagEdit: false, newTag: null, pendingTag: null,
         confirmDelete: false, scrub: null,
       });

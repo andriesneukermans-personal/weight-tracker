@@ -75,6 +75,19 @@ export function parseWeightToKg(raw, unit) {
   return { ok: true, kg: Math.round(kg * 100) / 100 };
 }
 
+// Weights render with hundredths when they carry them, but a plain 82.5
+// stays "82.5" instead of growing a noisy trailing zero.
+export function fmtWeight(n) {
+  const s = n.toFixed(2);
+  return s.endsWith('0') ? s.slice(0, -1) : s;
+}
+
+// Whole kilos lost so far, measured against the CURRENT weight so the
+// count (and the milestones built on it) drops back when weight returns.
+export function kgLost(startKg, currentKg) {
+  return Math.max(0, Math.floor(startKg - currentKg));
+}
+
 export function entriesEqual(a, b) {
   if (a.length !== b.length) return false;
   const sa = sortByDate(a);
