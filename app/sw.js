@@ -1,6 +1,6 @@
 // App-shell cache, stale-while-revalidate. Cross-origin requests
 // (api.github.com) are never intercepted: sync always hits the network.
-const CACHE = 'wt-shell-v6';
+const CACHE = 'wt-shell-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -8,9 +8,16 @@ const ASSETS = [
   './js/app.js',
   './js/logic.js',
   './js/chart.js',
+  './js/road.js',
+  './js/roadview.js',
   './js/store.js',
   './js/github.js',
   './js/sync.js',
+  './js/vendor/lottie_svg.min.js',
+  './anim/avatar-idle.json',
+  './anim/avatar-hop.json',
+  './anim/avatar-celebrate.json',
+  './anim/avatar-pushback.json',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

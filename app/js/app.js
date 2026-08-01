@@ -8,6 +8,8 @@ import {
   shortDate, parseDateLocal, dayNum, hhmm, entryId, fmtWeight, kgLost,
 } from './logic.js';
 import { computeChart, chartSVG, RANGE_KEYS } from './chart.js';
+import { computeRoad } from './road.js';
+import { mountRoad, suspendRoad, scrollRoadToAvatar } from './roadview.js';
 import { openDB, getAllEntries, putEntry, mergeReplaceEntries } from './store.js';
 import { pullData, pushData } from './github.js';
 import { runSync } from './sync.js';
@@ -216,24 +218,10 @@ function compute() {
     };
   });
 
-  // milestones
-  const milestones = startW == null ? [] : [2, 4, 6, 8].map((k) => {
-    const done = doneK >= k;
-    return {
-      label: (unit() === 'kg' ? k + ' kg' : Math.round(disp(k)) + ' lbs') + ' down',
-      sub: (done ? 'Reached at ' : 'At ') + fmt(startW - k) + ' ' + unit(),
-      op: done ? '1' : '0.55', badgeBg: done ? '#a4d4c5' : '#f0ead9',
-      mark: done ? '✓' : '·', markC: done ? '#0a1a1a' : '#9a9a9a',
-    };
-  });
-  if (goal != null) {
-    milestones.push({
-      label: 'Goal · ' + fmt(goal) + ' ' + unit(),
-      sub: f.kind === 'onTrack' && f.date ? 'Forecast: ' + shortDate(f.date) : 'Keep logging to unlock a forecast',
-      op: '1', badgeBg: last && last.weightKg <= goal ? '#a4d4c5' : ACCENT,
-      mark: last && last.weightKg <= goal ? '✓' : '★', markC: '#ffffff',
-    });
-  }
+  // journey road (replaces the old milestones list); driven by the 7-day
+  // trend, unlike the save() celebration which keys off raw new lows —
+  // intentional divergence, not a bug
+  const road = computeRoad({ startKg: startW, goalKg: goal, trendKg: trLast, unit: unit() });
 
   const pct = goal != null && startW != null && startW > goal
     ? Math.max(0, Math.min(1, (startW - last.weightKg) / (startW - goal)))
@@ -261,7 +249,7 @@ function compute() {
     startLabel: startW != null ? fmt(startW) : '—',
     pctW: pct != null ? Math.round(pct * 100) + '%' : '0%',
     pctLabel: pct != null ? Math.round(pct * 100) + '% there' : '—',
-    milestones,
+    road,
   };
 }
 
@@ -483,14 +471,13 @@ function historyHtml(V) {
 }
 
 function goalHtml(V) {
-  const ms = V.milestones.map((m) => `
-    <div class="card milestone" style="opacity:${m.op}">
-      <div class="milestone-badge" style="background:${m.badgeBg};color:${m.markC}">${m.mark}</div>
-      <div class="col" style="flex:1">
-        <span class="milestone-label">${m.label}</span>
-        <span class="milestone-sub">${m.sub}</span>
-      </div>
-    </div>`).join('');
+  const journey = V.road.state === 'ok' || V.road.state === 'reached'
+    ? '<div class="card road-card" id="road-host"></div>'
+    : `<div class="card road-empty">${{
+        noGoal: 'Set a goal to lay down the road',
+        noEntries: 'Log your first weigh-in to start the journey',
+        gaining: 'Set a goal below your starting weight to build the road',
+      }[V.road.state]}</div>`;
   return `<div class="col screen screen-goal">
     <div class="row between">
       <span class="h1">Goal</span>
@@ -525,10 +512,10 @@ function goalHtml(V) {
       <span class="forecast-text">${V.predictText}</span>
       <span class="forecast-sub">Based on your 7-day trend, updated with every weigh-in</span>
     </div>
-    ${V.milestones.length ? `<div class="col" style="gap:8px">
-      <span class="kicker-sm">MILESTONES</span>
-      ${ms}
-    </div>` : ''}
+    <div class="col" style="gap:8px">
+      <span class="kicker-sm">JOURNEY</span>
+      ${journey}
+    </div>
   </div>`;
 }
 
@@ -587,7 +574,20 @@ function render() {
   bind(V);
 }
 
+let prevScreen = null;
+
 function bind(V) {
+  // journey road island: mount on the goal screen, pause elsewhere; scroll
+  // to the avatar only when ENTERING the screen, so same-screen re-renders
+  // (goal +/-, unit toggle) keep render()'s scroll preservation intact
+  const roadHost = $('#road-host');
+  if (roadHost) {
+    mountRoad(roadHost, V.road);
+    if (prevScreen !== 'goal') scrollRoadToAvatar($('#scroll'));
+  } else {
+    suspendRoad();
+  }
+  prevScreen = state.screen;
   const note = $('#note');
   if (note) note.addEventListener('input', (e) => { state.note = e.target.value; });
   const logdate = $('#logdate');

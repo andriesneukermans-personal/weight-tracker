@@ -1,0 +1,15 @@
+Journey road animation credits
+
+Character: "Zubulig" mascot series from LottieFiles (free tier).
+License: Lottie Simple License (modification and redistribution permitted).
+All four files recolored to the Clai palette at build time via
+scripts/recolor-lottie.mjs; otherwise unchanged.
+
+avatar-idle.json      source: "Zubulig merhaba"
+  https://lottiefiles.com/free-animation/zubulig-merhaba-AbuUwb3zWb
+avatar-hop.json       source: "walking mascot" (same Zubulig series)
+avatar-celebrate.json source: "mascot 1" (same Zubulig series, arms up + star)
+avatar-pushback.json  source: "mascot 2" (same Zubulig series, look around)
+
+TODO: fill in the three remaining source URLs (files were uploaded from
+LottieFiles by Andries; ask for the page links).
